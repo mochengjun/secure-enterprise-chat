@@ -1,0 +1,279 @@
+name: Load Tests
+
+on:
+  # 手动触发
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: 'Test scenario to run'
+        required: true
+        default: 'smoke'
+        type: choice
+        options:
+          - smoke
+          - auth
+          - chat
+          - websocket
+          - mixed
+          - all
+          - stress
+          - spike
+      load_profile:
+        description: 'Load profile'
+        required: true
+        default: 'load'
+        type: choice
+        options:
+          - smoke
+          - load
+          - stress
+          - spike
+      target_env:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - local
+          - staging
+          - production
+  
+  # 定时运行 (每周一凌晨运行完整负载测试)
+  schedule:
+    - cron: '0 2 * * 1'
+  
+  # 发布时运行
+  release:
+    types: [published]
+
+env:
+  K6_VERSION: '0.47.0'
+
+jobs:
+  load-test:
+    name: Run Load Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install k6
+        run: |
+          curl -L https://github.com/grafana/k6/releases/download/v${{ env.K6_VERSION }}/k6-v${{ env.K6_VERSION }}-linux-amd64.tar.gz | tar xz
+          sudo mv k6-v${{ env.K6_VERSION }}-linux-amd64/k6 /usr/local/bin/
+          k6 version
+      
+      - name: Set test parameters
+        id: params
+        run: |
+          # 根据触发方式设置参数
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "scenario=${{ github.event.inputs.scenario }}" >> $GITHUB_OUTPUT
+            echo "load_profile=${{ github.event.inputs.load_profile }}" >> $GITHUB_OUTPUT
+            echo "target_env=${{ github.event.inputs.target_env }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" == "schedule" ]; then
+            echo "scenario=all" >> $GITHUB_OUTPUT
+            echo "load_profile=load" >> $GITHUB_OUTPUT
+            echo "target_env=staging" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" == "release" ]; then
+            echo "scenario=mixed" >> $GITHUB_OUTPUT
+            echo "load_profile=stress" >> $GITHUB_OUTPUT
+            echo "target_env=staging" >> $GITHUB_OUTPUT
+          else
+            echo "scenario=smoke" >> $GITHUB_OUTPUT
+            echo "load_profile=smoke" >> $GITHUB_OUTPUT
+            echo "target_env=staging" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Create results directory
+        run: mkdir -p tests/load/results
+      
+      - name: Run Auth Load Test
+        if: steps.params.outputs.scenario == 'auth' || steps.params.outputs.scenario == 'all' || steps.params.outputs.scenario == 'smoke'
+        working-directory: tests/load
+        run: |
+          k6 run \
+            --env TARGET_ENV=${{ steps.params.outputs.target_env }} \
+            --env LOAD_PROFILE=${{ steps.params.outputs.load_profile }} \
+            --out json=results/auth.json \
+            --summary-export=results/auth_summary.json \
+            scenarios/auth.js
+        continue-on-error: true
+      
+      - name: Run Chat Load Test
+        if: steps.params.outputs.scenario == 'chat' || steps.params.outputs.scenario == 'all'
+        working-directory: tests/load
+        run: |
+          k6 run \
+            --env TARGET_ENV=${{ steps.params.outputs.target_env }} \
+            --env LOAD_PROFILE=${{ steps.params.outputs.load_profile }} \
+            --out json=results/chat.json \
+            --summary-export=results/chat_summary.json \
+            scenarios/chat.js
+        continue-on-error: true
+      
+      - name: Run WebSocket Load Test
+        if: steps.params.outputs.scenario == 'websocket' || steps.params.outputs.scenario == 'all' || steps.params.outputs.scenario == 'stress'
+        working-directory: tests/load
+        run: |
+          k6 run \
+            --env TARGET_ENV=${{ steps.params.outputs.target_env }} \
+            --env LOAD_PROFILE=${{ steps.params.outputs.load_profile }} \
+            --out json=results/websocket.json \
+            --summary-export=results/websocket_summary.json \
+            scenarios/websocket.js
+        continue-on-error: true
+      
+      - name: Run Mixed Scenario Test
+        if: steps.params.outputs.scenario == 'mixed' || steps.params.outputs.scenario == 'all' || steps.params.outputs.scenario == 'spike'
+        working-directory: tests/load
+        run: |
+          k6 run \
+            --env TARGET_ENV=${{ steps.params.outputs.target_env }} \
+            --env LOAD_PROFILE=${{ steps.params.outputs.load_profile }} \
+            --out json=results/mixed.json \
+            --summary-export=results/mixed_summary.json \
+            scenarios/mixed.js
+        continue-on-error: true
+      
+      - name: Generate Summary Report
+        if: always()
+        working-directory: tests/load
+        run: |
+          echo "# Load Test Results" > results/SUMMARY.md
+          echo "" >> results/SUMMARY.md
+          echo "**Date:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> results/SUMMARY.md
+          echo "**Scenario:** ${{ steps.params.outputs.scenario }}" >> results/SUMMARY.md
+          echo "**Load Profile:** ${{ steps.params.outputs.load_profile }}" >> results/SUMMARY.md
+          echo "**Environment:** ${{ steps.params.outputs.target_env }}" >> results/SUMMARY.md
+          echo "" >> results/SUMMARY.md
+          
+          for summary_file in results/*_summary.json; do
+            if [ -f "$summary_file" ]; then
+              test_name=$(basename "$summary_file" _summary.json)
+              echo "## $test_name" >> results/SUMMARY.md
+              echo "" >> results/SUMMARY.md
+              echo '```json' >> results/SUMMARY.md
+              cat "$summary_file" | head -100 >> results/SUMMARY.md
+              echo '```' >> results/SUMMARY.md
+              echo "" >> results/SUMMARY.md
+            fi
+          done
+      
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-test-results-${{ github.run_number }}
+          path: tests/load/results/
+          retention-days: 30
+      
+      - name: Post Results to PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summaryPath = 'tests/load/results/SUMMARY.md';
+            
+            if (fs.existsSync(summaryPath)) {
+              const summary = fs.readFileSync(summaryPath, 'utf8');
+              
+              github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: summary
+              });
+            }
+      
+      - name: Check Thresholds
+        if: always()
+        working-directory: tests/load
+        run: |
+          # 检查是否有测试失败
+          failed=false
+          
+          for summary_file in results/*_summary.json; do
+            if [ -f "$summary_file" ]; then
+              # 检查阈值是否通过
+              if grep -q '"thresholds".*"fails":[^0]' "$summary_file" 2>/dev/null; then
+                echo "Threshold failures detected in $summary_file"
+                failed=true
+              fi
+            fi
+          done
+          
+          if [ "$failed" = true ]; then
+            echo "::warning::Some load test thresholds were not met"
+            # 不在 staging 环境下失败整个工作流
+            if [ "${{ steps.params.outputs.target_env }}" = "production" ]; then
+              exit 1
+            fi
+          fi
+      
+      - name: Notify on Failure
+        if: failure() && github.event_name == 'schedule'
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: |
+            {
+              "text": "Load Test Failed",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Load Test Failed* :x:\n\nScheduled load tests have failed.\n\n*Run:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Details>"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+  performance-baseline:
+    name: Update Performance Baseline
+    runs-on: ubuntu-latest
+    needs: load-test
+    if: github.event_name == 'release' && success()
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Download Test Results
+        uses: actions/download-artifact@v4
+        with:
+          name: load-test-results-${{ github.run_number }}
+          path: results/
+      
+      - name: Update Baseline
+        run: |
+          # 提取关键指标作为基线
+          echo "Updating performance baseline..."
+          
+          # 创建基线文件
+          cat > performance-baseline.json << 'EOF'
+          {
+            "version": "${{ github.ref_name }}",
+            "timestamp": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')",
+            "thresholds": {
+              "http_req_duration_p95": 500,
+              "http_req_duration_p99": 1000,
+              "http_req_failed_rate": 0.01,
+              "ws_connect_duration_p95": 500,
+              "ws_message_latency_p95": 100
+            }
+          }
+          EOF
+      
+      - name: Commit Baseline
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: update performance baseline for ${{ github.ref_name }}"
+          file_pattern: performance-baseline.json
+          branch: main

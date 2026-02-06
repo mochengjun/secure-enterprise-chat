@@ -1,0 +1,146 @@
+# Prometheus 告警规则
+groups:
+  # 应用告警
+  - name: application
+    interval: 30s
+    rules:
+      - alert: ServiceDown
+        expr: up{job="auth-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "{{ $labels.instance }} has been down for more than 1 minute"
+
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m])) by (job)
+          / sum(rate(http_requests_total[5m])) by (job)
+          > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate in {{ $labels.job }}"
+          description: "Error rate is {{ $value | humanizePercentage }}"
+
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, job))
+          > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High latency in {{ $labels.job }}"
+          description: "95th percentile latency is {{ $value }}s"
+
+      - alert: TooManyConnections
+        expr: websocket_connections > 10000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Too many WebSocket connections"
+          description: "Current connections: {{ $value }}"
+
+  # 基础设施告警
+  - name: infrastructure
+    interval: 30s
+    rules:
+      - alert: HighCPUUsage
+        expr: |
+          100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is {{ $value }}%"
+
+      - alert: HighMemoryUsage
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is {{ $value }}%"
+
+      - alert: DiskSpaceLow
+        expr: |
+          (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low disk space on {{ $labels.instance }}"
+          description: "Disk usage is {{ $value }}%"
+
+  # 数据库告警
+  - name: database
+    interval: 30s
+    rules:
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL is down"
+          description: "PostgreSQL instance is not responding"
+
+      - alert: PostgresHighConnections
+        expr: |
+          sum(pg_stat_activity_count) / pg_settings_max_connections * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High PostgreSQL connection usage"
+          description: "Connection usage is {{ $value }}%"
+
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis is down"
+          description: "Redis instance is not responding"
+
+      - alert: RedisHighMemory
+        expr: |
+          redis_memory_used_bytes / redis_memory_max_bytes * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Redis memory usage"
+          description: "Memory usage is {{ $value }}%"
+
+  # 安全告警
+  - name: security
+    interval: 30s
+    rules:
+      - alert: TooManyLoginFailures
+        expr: |
+          sum(rate(auth_login_failures_total[5m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Too many login failures"
+          description: "{{ $value }} login failures per second"
+
+      - alert: SuspiciousActivity
+        expr: |
+          sum(rate(auth_login_failures_total[5m])) by (source_ip) > 5
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Suspicious activity from {{ $labels.source_ip }}"
+          description: "Multiple login failures from same IP"

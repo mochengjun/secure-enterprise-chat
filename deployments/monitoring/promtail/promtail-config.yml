@@ -1,0 +1,229 @@
+# Promtail 配置文件
+# 用于收集 Secure Chat 应用日志并发送到 Loki
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+# 日志级别
+log_level: info
+
+# 位置文件 - 记录已读取的日志位置
+positions:
+  filename: /tmp/positions.yaml
+
+# Loki 客户端配置
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+    tenant_id: default
+    batchwait: 1s
+    batchsize: 1048576
+    timeout: 10s
+    backoff_config:
+      min_period: 500ms
+      max_period: 5m
+      max_retries: 10
+    external_labels:
+      cluster: sec-chat
+      environment: ${ENVIRONMENT:-development}
+
+# 抓取配置
+scrape_configs:
+  # Auth Service 日志
+  - job_name: auth-service
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: auth-service
+          app: auth-service
+          __path__: /var/log/auth-service/*.log
+    pipeline_stages:
+      - multiline:
+          firstline: '^\d{4}-\d{2}-\d{2}'
+          max_wait_time: 3s
+      - json:
+          expressions:
+            level: level
+            msg: msg
+            time: time
+            request_id: request_id
+            user_id: user_id
+            method: method
+            path: path
+            status: status
+            duration: duration
+            source_ip: source_ip
+      - labels:
+          level:
+          method:
+          status:
+      - timestamp:
+          source: time
+          format: RFC3339Nano
+      - output:
+          source: msg
+
+  # Docker 容器日志
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: container
+      - source_labels: ['__meta_docker_container_log_stream']
+        target_label: stream
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: service
+      - source_labels: ['__meta_docker_container_label_app']
+        target_label: app
+    pipeline_stages:
+      # 尝试解析 JSON 日志
+      - match:
+          selector: '{container=~".+"}'
+          stages:
+            - json:
+                expressions:
+                  level: level
+                  msg: msg
+                  time: time
+                  error: error
+            - labels:
+                level:
+            - output:
+                source: msg
+
+  # Nginx 访问日志
+  - job_name: nginx-access
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: nginx
+          app: nginx
+          log_type: access
+          __path__: /var/log/nginx/access.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<remote_addr>\S+) - (?P<remote_user>\S+) \[(?P<time_local>[^\]]+)\] "(?P<method>\S+) (?P<path>\S+) (?P<protocol>\S+)" (?P<status>\d+) (?P<body_bytes_sent>\d+) "(?P<http_referer>[^"]*)" "(?P<http_user_agent>[^"]*)"'
+      - labels:
+          method:
+          status:
+          path:
+      - template:
+          source: path
+          template: '{{ regexReplaceAll "/api/v1/users/[a-z0-9-]+" .Value "/api/v1/users/{id}" }}'
+      - template:
+          source: path
+          template: '{{ regexReplaceAll "/api/v1/chat/rooms/[a-z0-9-]+" .Value "/api/v1/chat/rooms/{id}" }}'
+
+  # Nginx 错误日志
+  - job_name: nginx-error
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: nginx
+          app: nginx
+          log_type: error
+          __path__: /var/log/nginx/error.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<time>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): (?P<message>.*)$'
+      - labels:
+          level:
+      - output:
+          source: message
+
+  # PostgreSQL 日志
+  - job_name: postgres
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: postgres
+          app: postgres
+          __path__: /var/log/postgresql/*.log
+    pipeline_stages:
+      - multiline:
+          firstline: '^\d{4}-\d{2}-\d{2}'
+          max_wait_time: 3s
+      - regex:
+          expression: '^(?P<time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+) (?P<timezone>\S+) \[(?P<pid>\d+)\] (?P<user>\S+)?@?(?P<database>\S+)? (?P<level>\w+): (?P<message>.*)$'
+      - labels:
+          level:
+          database:
+      - output:
+          source: message
+
+  # Redis 日志
+  - job_name: redis
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: redis
+          app: redis
+          __path__: /var/log/redis/*.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<pid>\d+):(?P<role>\w) (?P<time>\d{2} \w+ \d{4} \d{2}:\d{2}:\d{2}\.\d+) (?P<level>[\.\-\*\#]) (?P<message>.*)$'
+      - labels:
+          role:
+      - output:
+          source: message
+
+  # 系统日志
+  - job_name: syslog
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: syslog
+          __path__: /var/log/syslog
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<time>\w+\s+\d+\s+\d+:\d+:\d+) (?P<host>\S+) (?P<process>\S+?)(\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+      - labels:
+          host:
+          process:
+      - output:
+          source: message
+
+  # Kubernetes Pod 日志 (如果在 K8s 环境中)
+  - job_name: kubernetes-pods
+    kubernetes_sd_configs:
+      - role: pod
+    relabel_configs:
+      # 只收集有特定注解的 Pod
+      - source_labels: [__meta_kubernetes_pod_annotation_promtail_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        target_label: app
+      - source_labels: [__meta_kubernetes_pod_container_name]
+        target_label: container
+      - replacement: /var/log/pods/*$1/*.log
+        separator: /
+        source_labels:
+          - __meta_kubernetes_pod_uid
+          - __meta_kubernetes_pod_container_name
+        target_label: __path__
+    pipeline_stages:
+      - cri: {}
+      - json:
+          expressions:
+            level: level
+            msg: msg
+      - labels:
+          level:
+
+# 目标配置
+target_config:
+  sync_period: 10s

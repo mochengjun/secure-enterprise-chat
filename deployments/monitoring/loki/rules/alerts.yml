@@ -1,0 +1,220 @@
+# Loki 日志告警规则
+# 基于日志内容的告警
+
+groups:
+  - name: application_logs
+    interval: 1m
+    rules:
+      # 错误率告警
+      - alert: HighErrorRate
+        expr: |
+          sum(rate({app="auth-service"} |= "error" [5m])) by (app)
+          / sum(rate({app="auth-service"} [5m])) by (app)
+          > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate in {{ $labels.app }}"
+          description: "Error rate is {{ $value | humanizePercentage }} in the last 5 minutes"
+
+      # 致命错误
+      - alert: FatalError
+        expr: |
+          count_over_time({app="auth-service"} |~ "(?i)fatal|panic|crash" [5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Fatal error detected in {{ $labels.app }}"
+          description: "A fatal error, panic, or crash was detected"
+
+      # 认证失败过多
+      - alert: TooManyAuthFailures
+        expr: |
+          sum(count_over_time({app="auth-service"} |= "authentication failed" [5m])) > 50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Too many authentication failures"
+          description: "More than 50 authentication failures in the last 5 minutes"
+
+      # 可能的暴力破解
+      - alert: PossibleBruteForce
+        expr: |
+          sum by (source_ip) (
+            count_over_time({app="auth-service"} |= "authentication failed" | json | line_format "{{.source_ip}}" [5m])
+          ) > 20
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Possible brute force attack from {{ $labels.source_ip }}"
+          description: "More than 20 failed login attempts from the same IP"
+
+  - name: security_logs
+    interval: 30s
+    rules:
+      # SQL 注入尝试
+      - alert: SQLInjectionAttempt
+        expr: |
+          count_over_time({app=~"auth-service|chat-service"} |~ "(?i)(union.*select|or.*1.*=.*1|drop.*table|insert.*into)" [5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Possible SQL injection attempt detected"
+          description: "A potential SQL injection pattern was found in the logs"
+
+      # XSS 尝试
+      - alert: XSSAttempt
+        expr: |
+          count_over_time({app=~"auth-service|chat-service"} |~ "(?i)(<script|javascript:|on\\w+\\s*=)" [5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Possible XSS attempt detected"
+          description: "A potential XSS pattern was found in the logs"
+
+      # 权限提升尝试
+      - alert: PrivilegeEscalationAttempt
+        expr: |
+          count_over_time({app="auth-service"} |= "unauthorized access" |= "admin" [5m]) > 5
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Possible privilege escalation attempt"
+          description: "Multiple unauthorized access attempts to admin resources"
+
+      # 敏感数据访问
+      - alert: SensitiveDataAccess
+        expr: |
+          count_over_time({app="auth-service"} |~ "(?i)(export.*user|bulk.*download|data.*dump)" [5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Sensitive data access detected"
+          description: "A bulk data operation was performed"
+
+  - name: infrastructure_logs
+    interval: 1m
+    rules:
+      # 数据库连接错误
+      - alert: DatabaseConnectionError
+        expr: |
+          count_over_time({app="auth-service"} |~ "(?i)(database.*connection|connection.*refused|connection.*timeout)" [5m]) > 5
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Database connection errors"
+          description: "Multiple database connection errors detected"
+
+      # Redis 连接错误
+      - alert: RedisConnectionError
+        expr: |
+          count_over_time({app="auth-service"} |~ "(?i)(redis.*connection|redis.*timeout|redis.*refused)" [5m]) > 5
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis connection errors"
+          description: "Multiple Redis connection errors detected"
+
+      # 内存不足警告
+      - alert: OutOfMemoryWarning
+        expr: |
+          count_over_time({app=~".+"} |~ "(?i)(out of memory|oom|memory exhausted)" [5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Out of memory condition detected"
+          description: "An OOM condition was detected in the logs"
+
+      # 磁盘空间不足
+      - alert: DiskSpaceWarning
+        expr: |
+          count_over_time({app=~".+"} |~ "(?i)(disk.*full|no space left|disk.*quota)" [5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Disk space issue detected"
+          description: "A disk space issue was detected in the logs"
+
+  - name: api_logs
+    interval: 1m
+    rules:
+      # 慢请求
+      - alert: SlowRequests
+        expr: |
+          count_over_time({app="auth-service"} | json | duration > 5s [5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Too many slow requests"
+          description: "More than 10 requests took longer than 5 seconds"
+
+      # 请求超时
+      - alert: RequestTimeouts
+        expr: |
+          count_over_time({app="auth-service"} |= "timeout" [5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Multiple request timeouts"
+          description: "More than 10 request timeouts in the last 5 minutes"
+
+      # 5xx 错误
+      - alert: Server5xxErrors
+        expr: |
+          count_over_time({app="auth-service"} | json | status >= 500 [5m]) > 10
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High number of 5xx errors"
+          description: "More than 10 server errors in the last 5 minutes"
+
+      # 429 限流
+      - alert: RateLimitTriggered
+        expr: |
+          count_over_time({app="auth-service"} | json | status == 429 [5m]) > 50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Rate limiting triggered frequently"
+          description: "More than 50 rate limit responses in the last 5 minutes"
+
+  - name: websocket_logs
+    interval: 1m
+    rules:
+      # WebSocket 连接失败
+      - alert: WebSocketConnectionFailures
+        expr: |
+          count_over_time({app="auth-service"} |= "websocket" |= "failed" [5m]) > 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High WebSocket connection failures"
+          description: "More than 20 WebSocket connection failures"
+
+      # WebSocket 断开过多
+      - alert: WebSocketDisconnections
+        expr: |
+          count_over_time({app="auth-service"} |= "websocket" |= "disconnected" [5m]) > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High WebSocket disconnection rate"
+          description: "Unusual number of WebSocket disconnections"
