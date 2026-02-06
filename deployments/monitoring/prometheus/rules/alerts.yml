@@ -1,0 +1,249 @@
+# ============================================================
+# Prometheus Alert Rules
+# Secure Enterprise Chat
+# ============================================================
+
+groups:
+  # ============================================================
+  # Application Alerts
+  # ============================================================
+  - name: application
+    rules:
+      # High Error Rate
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m])) 
+          / sum(rate(http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High HTTP error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+
+      # High Latency
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High request latency detected"
+          description: "95th percentile latency is {{ $value | humanizeDuration }}"
+
+      # Service Down
+      - alert: ServiceDown
+        expr: up{job="auth-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Auth service is down"
+          description: "Auth service has been down for more than 1 minute"
+
+      # Too Many Goroutines
+      - alert: TooManyGoroutines
+        expr: go_goroutines{job="auth-service"} > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Too many goroutines"
+          description: "{{ $value }} goroutines running (threshold: 1000)"
+
+      # High Memory Usage
+      - alert: HighMemoryUsage
+        expr: |
+          go_memstats_heap_inuse_bytes{job="auth-service"} 
+          / go_memstats_heap_sys_bytes{job="auth-service"} > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High heap memory usage"
+          description: "Heap usage is {{ $value | humanizePercentage }}"
+
+  # ============================================================
+  # Database Alerts
+  # ============================================================
+  - name: database
+    rules:
+      # PostgreSQL Down
+      - alert: PostgreSQLDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL is down"
+          description: "PostgreSQL has been down for more than 1 minute"
+
+      # PostgreSQL High Connections
+      - alert: PostgreSQLHighConnections
+        expr: |
+          pg_stat_activity_count 
+          / pg_settings_max_connections > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High PostgreSQL connections"
+          description: "{{ $value | humanizePercentage }} of max connections used"
+
+      # PostgreSQL Slow Queries
+      - alert: PostgreSQLSlowQueries
+        expr: |
+          rate(pg_stat_statements_seconds_total[5m]) 
+          / rate(pg_stat_statements_calls_total[5m]) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow PostgreSQL queries detected"
+          description: "Average query time is {{ $value | humanizeDuration }}"
+
+      # PostgreSQL Replication Lag
+      - alert: PostgreSQLReplicationLag
+        expr: pg_replication_lag > 30
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL replication lag"
+          description: "Replication lag is {{ $value }}s"
+
+  # ============================================================
+  # Redis Alerts
+  # ============================================================
+  - name: redis
+    rules:
+      # Redis Down
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis is down"
+          description: "Redis has been down for more than 1 minute"
+
+      # Redis High Memory Usage
+      - alert: RedisHighMemory
+        expr: |
+          redis_memory_used_bytes 
+          / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Redis memory usage"
+          description: "Memory usage is {{ $value | humanizePercentage }}"
+
+      # Redis Too Many Connections
+      - alert: RedisTooManyConnections
+        expr: redis_connected_clients > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Too many Redis connections"
+          description: "{{ $value }} connected clients"
+
+      # Redis Rejected Connections
+      - alert: RedisRejectedConnections
+        expr: increase(redis_rejected_connections_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis rejecting connections"
+          description: "{{ $value }} connections rejected in last 5 minutes"
+
+  # ============================================================
+  # Infrastructure Alerts
+  # ============================================================
+  - name: infrastructure
+    rules:
+      # High CPU Usage
+      - alert: HighCPUUsage
+        expr: |
+          100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is {{ $value | humanize }}%"
+
+      # High Memory Usage (Host)
+      - alert: HighHostMemoryUsage
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is {{ $value | humanize }}%"
+
+      # High Disk Usage
+      - alert: HighDiskUsage
+        expr: |
+          (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} 
+          / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})) * 100 > 85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High disk usage on {{ $labels.instance }}"
+          description: "Disk usage is {{ $value | humanize }}% on {{ $labels.mountpoint }}"
+
+      # Container Restart
+      - alert: ContainerRestarting
+        expr: |
+          increase(kube_pod_container_status_restarts_total[1h]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.container }} restarting frequently"
+          description: "{{ $value }} restarts in the last hour"
+
+  # ============================================================
+  # Security Alerts
+  # ============================================================
+  - name: security
+    rules:
+      # Too Many Failed Logins
+      - alert: TooManyFailedLogins
+        expr: |
+          sum(rate(auth_login_failures_total[5m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High rate of failed login attempts"
+          description: "{{ $value }} failed logins per second"
+
+      # Brute Force Attack
+      - alert: PossibleBruteForceAttack
+        expr: |
+          sum by (ip) (rate(auth_login_failures_total[1m])) > 5
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Possible brute force attack from {{ $labels.ip }}"
+          description: "{{ $value }} failed logins per second from single IP"
+
+      # Rate Limit Exceeded
+      - alert: RateLimitExceeded
+        expr: |
+          sum(rate(http_rate_limited_total[5m])) > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High rate of rate-limited requests"
+          description: "{{ $value }} requests rate-limited per second"

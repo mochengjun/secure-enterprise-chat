@@ -1,0 +1,17 @@
+# ============================================================
+# Production Resource Quota (Enhanced)
+# ============================================================
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: sec-chat-quota
+  namespace: sec-chat-prod
+spec:
+  hard:
+    requests.cpu: "32"
+    requests.memory: 64Gi
+    limits.cpu: "64"
+    limits.memory: 128Gi
+    persistentvolumeclaims: "20"
+    pods: "100"
+    services: "50"

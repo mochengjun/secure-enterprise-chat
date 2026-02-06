@@ -1,0 +1,235 @@
+# ============================================================
+# Secure Enterprise Chat - Auth Service Deployment
+# Main application service (Auth, Chat, Admin, E2EE, WebRTC, etc.)
+# ============================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service-svc
+  namespace: sec-chat
+  labels:
+    app.kubernetes.io/name: auth-service
+    app.kubernetes.io/component: api
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8081
+      targetPort: 8081
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: auth-service
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: sec-chat
+  labels:
+    app.kubernetes.io/name: auth-service
+    app.kubernetes.io/component: api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: auth-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: auth-service
+        app.kubernetes.io/component: api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8081"
+        prometheus.io/path: "/metrics"
+    spec:
+      terminationGracePeriodSeconds: 30
+      serviceAccountName: sec-chat-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      initContainers:
+        # Wait for PostgreSQL to be ready
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z postgres-svc 5432; do echo waiting for postgres; sleep 2; done']
+        # Wait for Redis to be ready
+        - name: wait-for-redis
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z redis-svc 6379; do echo waiting for redis; sleep 2; done']
+      containers:
+        - name: auth-service
+          image: sec-chat/auth-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8081
+              name: http
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: sec-chat-config
+          env:
+            # Database credentials from secrets
+            - name: DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: sec-chat-secrets
+                  key: DATABASE_USER
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: sec-chat-secrets
+                  key: DATABASE_PASSWORD
+            # Redis password from secrets
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: sec-chat-secrets
+                  key: REDIS_PASSWORD
+            # JWT Secret from secrets
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: sec-chat-secrets
+                  key: JWT_SECRET
+            # TURN credentials (optional)
+            - name: TURN_SERVER
+              valueFrom:
+                secretKeyRef:
+                  name: sec-chat-secrets
+                  key: TURN_SERVER
+                  optional: true
+            - name: TURN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: sec-chat-secrets
+                  key: TURN_USERNAME
+                  optional: true
+            - name: TURN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: sec-chat-secrets
+                  key: TURN_PASSWORD
+                  optional: true
+            # Push notification settings
+            - name: FCM_ENABLED
+              value: "false"
+            - name: APNS_ENABLED
+              value: "false"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          volumeMounts:
+            - name: uploads
+              mountPath: /app/uploads
+            - name: data
+              mountPath: /app/data
+            - name: push-keys
+              mountPath: /app/keys
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: auth-service-uploads
+        - name: data
+          persistentVolumeClaim:
+            claimName: auth-service-data
+        - name: push-keys
+          secret:
+            secretName: push-notification-keys
+            optional: true
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: auth-service
+                topologyKey: kubernetes.io/hostname
+---
+# ServiceAccount
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sec-chat-sa
+  namespace: sec-chat
+  labels:
+    app.kubernetes.io/name: sec-chat
+---
+# PersistentVolumeClaim for uploads
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: auth-service-uploads
+  namespace: sec-chat
+  labels:
+    app.kubernetes.io/name: auth-service
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 50Gi
+---
+# PersistentVolumeClaim for data
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: auth-service-data
+  namespace: sec-chat
+  labels:
+    app.kubernetes.io/name: auth-service
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+# PodDisruptionBudget
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: auth-service-pdb
+  namespace: sec-chat
+  labels:
+    app.kubernetes.io/name: auth-service
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: auth-service

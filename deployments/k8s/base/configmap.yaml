@@ -1,0 +1,57 @@
+# ============================================================
+# Secure Enterprise Chat - ConfigMap
+# Non-sensitive configuration values
+# ============================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sec-chat-config
+  namespace: sec-chat
+  labels:
+    app.kubernetes.io/name: sec-chat
+    app.kubernetes.io/component: config
+data:
+  # Server Configuration
+  SERVER_MODE: "release"
+  SERVER_PORT: "8081"
+  SERVER_READ_TIMEOUT: "30s"
+  SERVER_WRITE_TIMEOUT: "30s"
+  
+  # Database Configuration
+  DATABASE_TYPE: "postgres"
+  DATABASE_HOST: "postgres-svc"
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: "sec_chat"
+  DATABASE_SSL_MODE: "disable"
+  DATABASE_MAX_CONNECTIONS: "100"
+  DATABASE_MAX_IDLE_CONNECTIONS: "10"
+  
+  # Redis Configuration
+  REDIS_HOST: "redis-svc"
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+  
+  # JWT Configuration
+  JWT_ACCESS_EXPIRY: "1h"
+  JWT_REFRESH_EXPIRY: "168h"
+  
+  # Security Configuration
+  BCRYPT_COST: "12"
+  RATE_LIMIT_REQUESTS: "100"
+  RATE_LIMIT_WINDOW: "1m"
+  
+  # Upload Configuration
+  UPLOAD_MAX_SIZE: "104857600"
+  UPLOAD_ALLOWED_TYPES: "image/jpeg,image/png,image/gif,video/mp4,audio/mpeg,application/pdf"
+  UPLOAD_PATH: "/app/uploads"
+  
+  # WebRTC Configuration
+  STUN_SERVER: "stun:stun.l.google.com:19302"
+  
+  # Logging Configuration
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+  
+  # Cleanup Configuration
+  CLEANUP_INTERVAL: "1h"
+  MESSAGE_RETENTION_DAYS: "30"

@@ -1,0 +1,149 @@
+# ============================================================
+# AlertManager Configuration
+# Secure Enterprise Chat
+# ============================================================
+
+global:
+  resolve_timeout: 5m
+  
+  # SMTP Configuration (for email alerts)
+  smtp_smarthost: 'smtp.example.com:587'
+  smtp_from: 'alertmanager@example.com'
+  smtp_auth_username: 'alertmanager@example.com'
+  smtp_auth_password: 'CHANGE_ME'
+  smtp_require_tls: true
+
+  # Slack Configuration
+  slack_api_url: 'https://hooks.slack.com/services/CHANGE_ME'
+
+# Templates
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# Route tree
+route:
+  # Default receiver
+  receiver: 'default-receiver'
+  
+  # Group alerts by these labels
+  group_by: ['alertname', 'cluster', 'service']
+  
+  # Wait before sending grouped alerts
+  group_wait: 30s
+  
+  # Wait before sending new alerts in group
+  group_interval: 5m
+  
+  # Resend interval for unresolved alerts
+  repeat_interval: 4h
+  
+  # Child routes
+  routes:
+    # Critical alerts - immediate notification
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      group_wait: 10s
+      repeat_interval: 1h
+      continue: true
+    
+    # Warning alerts
+    - match:
+        severity: warning
+      receiver: 'warning-alerts'
+      group_wait: 1m
+      repeat_interval: 4h
+    
+    # Security alerts - high priority
+    - match_re:
+        alertname: '(TooManyFailedLogins|PossibleBruteForceAttack|RateLimitExceeded)'
+      receiver: 'security-alerts'
+      group_wait: 10s
+      repeat_interval: 30m
+    
+    # Database alerts
+    - match_re:
+        alertname: '(PostgreSQL.*|Redis.*)'
+      receiver: 'database-alerts'
+      group_wait: 30s
+
+# Inhibition rules
+inhibit_rules:
+  # If service is down, inhibit other alerts from that service
+  - source_match:
+      alertname: 'ServiceDown'
+    target_match_re:
+      alertname: '.*'
+    equal: ['job']
+  
+  # Critical inhibits warning
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'cluster', 'service']
+
+# Receivers
+receivers:
+  # Default receiver
+  - name: 'default-receiver'
+    email_configs:
+      - to: 'ops-team@example.com'
+        send_resolved: true
+
+  # Critical alerts - multiple channels
+  - name: 'critical-alerts'
+    email_configs:
+      - to: 'ops-team@example.com,oncall@example.com'
+        send_resolved: true
+        headers:
+          Subject: '[CRITICAL] {{ .GroupLabels.alertname }} - Sec Chat'
+    slack_configs:
+      - channel: '#alerts-critical'
+        send_resolved: true
+        title: '{{ if eq .Status "firing" }}:fire:{{ else }}:white_check_mark:{{ end }} {{ .GroupLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+        color: '{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}'
+    # Webhook for PagerDuty/OpsGenie integration
+    webhook_configs:
+      - url: 'http://alertmanager-webhook:8080/critical'
+        send_resolved: true
+
+  # Warning alerts
+  - name: 'warning-alerts'
+    email_configs:
+      - to: 'ops-team@example.com'
+        send_resolved: true
+        headers:
+          Subject: '[WARNING] {{ .GroupLabels.alertname }} - Sec Chat'
+    slack_configs:
+      - channel: '#alerts-warning'
+        send_resolved: true
+        title: '{{ if eq .Status "firing" }}:warning:{{ else }}:white_check_mark:{{ end }} {{ .GroupLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+        color: '{{ if eq .Status "firing" }}warning{{ else }}good{{ end }}'
+
+  # Security alerts
+  - name: 'security-alerts'
+    email_configs:
+      - to: 'security-team@example.com,ops-team@example.com'
+        send_resolved: true
+        headers:
+          Subject: '[SECURITY] {{ .GroupLabels.alertname }} - Sec Chat'
+    slack_configs:
+      - channel: '#security-alerts'
+        send_resolved: true
+        title: ':rotating_light: {{ .GroupLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+        color: 'danger'
+
+  # Database alerts
+  - name: 'database-alerts'
+    email_configs:
+      - to: 'dba-team@example.com,ops-team@example.com'
+        send_resolved: true
+        headers:
+          Subject: '[DATABASE] {{ .GroupLabels.alertname }} - Sec Chat'
+    slack_configs:
+      - channel: '#alerts-database'
+        send_resolved: true

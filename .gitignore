@@ -1,0 +1,89 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+*.lock
+pubspec.lock
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Build outputs
+*.exe
+*.dll
+*.so
+*.dylib
+*.apk
+*.aab
+*.ipa
+*.zip
+*.tar.gz
+
+# Installer outputs
+installer/windows/output/
+installer/android/output/
+installer/ios/output/
+installer/macos/output/
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Secrets
+*.pem
+*.key
+*.crt
+credentials.json
+google-services.json
+GoogleService-Info.plist
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Go
+*.test
+__debug_bin
+
+# Uploads (runtime data)
+uploads/
+
+# Cache
+.cache/
+
+# Windows reserved names
+nul
+con
+prn
+aux

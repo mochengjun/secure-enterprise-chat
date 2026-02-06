@@ -1,0 +1,93 @@
+name: sec_chat
+description: 企业级安全聊天应用
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Matrix SDK
+  matrix: ^0.24.0
+  
+  # 状态管理
+  flutter_bloc: ^8.1.3
+  equatable: ^2.0.5
+  
+  # 依赖注入
+  get_it: ^7.6.4
+  injectable: ^2.3.2
+  
+  # 网络
+  dio: ^5.4.0
+  web_socket_channel: ^2.4.0
+  connectivity_plus: ^5.0.2
+  
+  # 安全存储
+  flutter_secure_storage: ^9.0.0
+  
+  # 生物识别
+  local_auth: ^2.1.8
+  
+  # 媒体
+  video_player: ^2.8.2
+  just_audio: ^0.9.36
+  file_picker: ^8.0.0
+  image_picker: ^1.0.7
+  cached_network_image: ^3.3.1
+  
+  # WebRTC
+  flutter_webrtc: ^0.12.0
+  
+  # 音频会话管理
+  audio_session: ^0.1.18
+  
+  # 推送
+  firebase_messaging: ^14.7.10
+  flutter_local_notifications: ^18.0.0
+  
+  # 本地数据库
+  sqflite: ^2.3.0
+  sqflite_common_ffi: ^2.3.3
+  sqlite3_flutter_libs: ^0.5.28
+  path_provider: ^2.1.1
+  path: ^1.8.0
+  
+  # UI 组件
+  flutter_svg: ^2.0.9
+  shimmer: ^3.0.0
+  
+  # 路由
+  go_router: ^13.0.0
+  
+  # 工具
+  intl: ^0.19.0
+  uuid: ^4.2.1
+  crypto: ^3.0.3
+  
+  # 权限
+  permission_handler: ^11.2.0
+  
+  # 其他
+  cupertino_icons: ^1.0.6
+  json_annotation: ^4.8.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+  build_runner: ^2.4.8
+  injectable_generator: ^2.4.1
+  json_serializable: ^6.7.1
+  bloc_test: ^9.1.5
+  mocktail: ^1.0.1
+
+flutter:
+  uses-material-design: true
+  
+  assets:
+    - assets/images/
+    - assets/icons/

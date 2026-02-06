@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecChat Admin - 管理后台</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Login Page -->
+        <div id="login-page" class="login-container">
+            <div class="login-box">
+                <div class="login-header">
+                    <i class="fas fa-shield-alt"></i>
+                    <h1>SecChat Admin</h1>
+                    <p>企业安全聊天管理后台</p>
+                </div>
+                <form id="login-form">
+                    <div class="form-group">
+                        <label for="username">用户名</label>
+                        <input type="text" id="username" name="username" required placeholder="请输入用户名">
+                    </div>
+                    <div class="form-group">
+                        <label for="password">密码</label>
+                        <input type="password" id="password" name="password" required placeholder="请输入密码">
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block">
+                        <i class="fas fa-sign-in-alt"></i> 登录
+                    </button>
+                    <div id="login-error" class="error-message"></div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Main Dashboard -->
+        <div id="dashboard" class="dashboard hidden">
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <i class="fas fa-shield-alt"></i>
+                    <span>SecChat Admin</span>
+                </div>
+                <nav class="sidebar-nav">
+                    <a href="#" class="nav-item active" data-page="overview">
+                        <i class="fas fa-tachometer-alt"></i>
+                        <span>系统概览</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="users">
+                        <i class="fas fa-users"></i>
+                        <span>用户管理</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="rooms">
+                        <i class="fas fa-comments"></i>
+                        <span>房间管理</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="admins">
+                        <i class="fas fa-user-shield"></i>
+                        <span>管理员</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="audit">
+                        <i class="fas fa-history"></i>
+                        <span>审计日志</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="settings">
+                        <i class="fas fa-cog"></i>
+                        <span>系统设置</span>
+                    </a>
+                </nav>
+                <div class="sidebar-footer">
+                    <button id="logout-btn" class="btn btn-outline">
+                        <i class="fas fa-sign-out-alt"></i> 退出登录
+                    </button>
+                </div>
+            </aside>
+
+            <!-- Main Content -->
+            <main class="main-content">
+                <!-- Header -->
+                <header class="main-header">
+                    <div class="header-left">
+                        <button id="sidebar-toggle" class="btn-icon">
+                            <i class="fas fa-bars"></i>
+                        </button>
+                        <h2 id="page-title">系统概览</h2>
+                    </div>
+                    <div class="header-right">
+                        <div class="admin-info">
+                            <i class="fas fa-user-circle"></i>
+                            <span id="admin-username">Admin</span>
+                            <span id="admin-role" class="badge badge-primary">Super Admin</span>
+                        </div>
+                    </div>
+                </header>
+
+                <!-- Page Content -->
+                <div class="page-content">
+                    <!-- Overview Page -->
+                    <div id="page-overview" class="page active">
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-icon users">
+                                    <i class="fas fa-users"></i>
+                                </div>
+                                <div class="stat-info">
+                                    <h3 id="stat-total-users">0</h3>
+                                    <p>总用户数</p>
+                                </div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon active">
+                                    <i class="fas fa-user-check"></i>
+                                </div>
+                                <div class="stat-info">
+                                    <h3 id="stat-active-users">0</h3>
+                                    <p>活跃用户</p>
+                                </div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon rooms">
+                                    <i class="fas fa-comments"></i>
+                                </div>
+                                <div class="stat-info">
+                                    <h3 id="stat-total-rooms">0</h3>
+                                    <p>聊天房间</p>
+                                </div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon messages">
+                                    <i class="fas fa-envelope"></i>
+                                </div>
+                                <div class="stat-info">
+                                    <h3 id="stat-total-messages">0</h3>
+                                    <p>总消息数</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="charts-row">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h3>今日统计</h3>
+                                </div>
+                                <div class="card-body">
+                                    <div class="today-stats">
+                                        <div class="today-stat">
+                                            <span class="label">新增用户</span>
+                                            <span id="stat-new-users-today" class="value">0</span>
+                                        </div>
+                                        <div class="today-stat">
+                                            <span class="label">新增房间</span>
+                                            <span id="stat-new-rooms-today" class="value">0</span>
+                                        </div>
+                                        <div class="today-stat">
+                                            <span class="label">今日消息</span>
+                                            <span id="stat-messages-today" class="value">0</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="card">
+                                <div class="card-header">
+                                    <h3>房间类型分布</h3>
+                                </div>
+                                <div class="card-body">
+                                    <div class="room-type-stats">
+                                        <div class="room-type">
+                                            <span class="type-label">私聊</span>
+                                            <div class="progress-bar">
+                                                <div id="progress-direct" class="progress" style="width: 0%"></div>
+                                            </div>
+                                            <span id="stat-direct-rooms" class="type-count">0</span>
+                                        </div>
+                                        <div class="room-type">
+                                            <span class="type-label">群组</span>
+                                            <div class="progress-bar">
+                                                <div id="progress-group" class="progress group" style="width: 0%"></div>
+                                            </div>
+                                            <span id="stat-group-rooms" class="type-count">0</span>
+                                        </div>
+                                        <div class="room-type">
+                                            <span class="type-label">频道</span>
+                                            <div class="progress-bar">
+                                                <div id="progress-channel" class="progress channel" style="width: 0%"></div>
+                                            </div>
+                                            <span id="stat-channel-rooms" class="type-count">0</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Users Page -->
+                    <div id="page-users" class="page">
+                        <div class="page-toolbar">
+                            <div class="search-box">
+                                <i class="fas fa-search"></i>
+                                <input type="text" id="user-search" placeholder="搜索用户...">
+                            </div>
+                            <div class="toolbar-actions">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="active-only"> 仅显示活跃用户
+                                </label>
+                                <button id="refresh-users" class="btn btn-secondary">
+                                    <i class="fas fa-sync-alt"></i> 刷新
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="table-container">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>用户ID</th>
+                                            <th>用户名</th>
+                                            <th>显示名</th>
+                                            <th>邮箱</th>
+                                            <th>MFA</th>
+                                            <th>状态</th>
+                                            <th>注册时间</th>
+                                            <th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="users-table-body">
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="pagination" id="users-pagination"></div>
+                        </div>
+                    </div>
+
+                    <!-- Rooms Page -->
+                    <div id="page-rooms" class="page">
+                        <div class="page-toolbar">
+                            <div class="search-box">
+                                <i class="fas fa-search"></i>
+                                <input type="text" id="room-search" placeholder="搜索房间...">
+                            </div>
+                            <div class="toolbar-actions">
+                                <select id="room-type-filter" class="select-input">
+                                    <option value="">全部类型</option>
+                                    <option value="direct">私聊</option>
+                                    <option value="group">群组</option>
+                                    <option value="channel">频道</option>
+                                </select>
+                                <button id="refresh-rooms" class="btn btn-secondary">
+                                    <i class="fas fa-sync-alt"></i> 刷新
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="table-container">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>房间ID</th>
+                                            <th>名称</th>
+                                            <th>类型</th>
+                                            <th>创建者</th>
+                                            <th>创建时间</th>
+                                            <th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="rooms-table-body">
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="pagination" id="rooms-pagination"></div>
+                        </div>
+                    </div>
+
+                    <!-- Admins Page -->
+                    <div id="page-admins" class="page">
+                        <div class="page-toolbar">
+                            <h3>管理员列表</h3>
+                            <button id="add-admin-btn" class="btn btn-primary">
+                                <i class="fas fa-plus"></i> 添加管理员
+                            </button>
+                        </div>
+                        <div class="card">
+                            <div class="table-container">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>用户ID</th>
+                                            <th>用户名</th>
+                                            <th>角色</th>
+                                            <th>添加时间</th>
+                                            <th>添加者</th>
+                                            <th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="admins-table-body">
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Audit Page -->
+                    <div id="page-audit" class="page">
+                        <div class="page-toolbar">
+                            <div class="filter-group">
+                                <select id="audit-action-filter" class="select-input">
+                                    <option value="">全部操作</option>
+                                    <option value="user_create">用户创建</option>
+                                    <option value="user_update">用户更新</option>
+                                    <option value="user_delete">用户删除</option>
+                                    <option value="user_login">用户登录</option>
+                                    <option value="room_create">房间创建</option>
+                                    <option value="room_delete">房间删除</option>
+                                    <option value="setting_update">设置更新</option>
+                                    <option value="admin_action">管理操作</option>
+                                </select>
+                            </div>
+                            <button id="refresh-audit" class="btn btn-secondary">
+                                <i class="fas fa-sync-alt"></i> 刷新
+                            </button>
+                        </div>
+                        <div class="card">
+                            <div class="table-container">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>时间</th>
+                                            <th>操作</th>
+                                            <th>执行者</th>
+                                            <th>目标</th>
+                                            <th>详情</th>
+                                            <th>IP地址</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="audit-table-body">
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="pagination" id="audit-pagination"></div>
+                        </div>
+                    </div>
+
+                    <!-- Settings Page -->
+                    <div id="page-settings" class="page">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>系统设置</h3>
+                            </div>
+                            <div class="card-body">
+                                <div id="settings-list" class="settings-list">
+                                </div>
+                                <div class="settings-actions">
+                                    <button id="add-setting-btn" class="btn btn-primary">
+                                        <i class="fas fa-plus"></i> 添加设置
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="modal-overlay" class="modal-overlay hidden">
+        <div id="modal-container" class="modal">
+            <div class="modal-header">
+                <h3 id="modal-title">标题</h3>
+                <button class="modal-close" onclick="closeModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div id="modal-body" class="modal-body">
+            </div>
+            <div id="modal-footer" class="modal-footer">
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="js/api.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,131 @@
+# ============================================================
+# Secure Enterprise Chat - Production Overlay
+# ============================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: sec-chat-prod
+
+resources:
+  - ../../base
+
+namePrefix: prod-
+
+commonLabels:
+  environment: production
+
+# Production-specific configurations
+patches:
+  # Increase replicas for production
+  - target:
+      kind: Deployment
+      name: auth-service
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+  
+  # Production HPA settings
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: auth-service-hpa
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 3
+      - op: replace
+        path: /spec/maxReplicas
+        value: 20
+  
+  # Production resource settings
+  - target:
+      kind: Deployment
+      name: auth-service
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 512Mi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: 500m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 2Gi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: 2000m
+  
+  # Production PVC storage sizes
+  - target:
+      kind: PersistentVolumeClaim
+      name: auth-service-uploads
+    patch: |-
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 100Gi
+  
+  - target:
+      kind: PersistentVolumeClaim
+      name: auth-service-data
+    patch: |-
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 20Gi
+  
+  # Production PostgreSQL storage
+  - target:
+      kind: StatefulSet
+      name: postgres
+    patch: |-
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage
+        value: 50Gi
+  
+  # Production Redis storage
+  - target:
+      kind: StatefulSet
+      name: redis
+    patch: |-
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage
+        value: 5Gi
+
+# ConfigMap patches for production
+configMapGenerator:
+  - name: sec-chat-config
+    behavior: merge
+    literals:
+      - SERVER_MODE=release
+      - LOG_LEVEL=info
+      - LOG_FORMAT=json
+      - JWT_ACCESS_EXPIRY=30m
+      - JWT_REFRESH_EXPIRY=24h
+      - BCRYPT_COST=14
+      - RATE_LIMIT_REQUESTS=60
+      - DATABASE_MAX_CONNECTIONS=200
+      - DATABASE_MAX_IDLE_CONNECTIONS=20
+
+# Production ResourceQuota
+patchesStrategicMerge:
+  - production-quota.yaml
+
+# Production ingress hosts
+patchesJson6902:
+  - target:
+      group: networking.k8s.io
+      version: v1
+      kind: Ingress
+      name: sec-chat-ingress
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: api.chat.example.com
+      - op: replace
+        path: /spec/rules/1/host
+        value: chat.example.com
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: chat.example.com
+      - op: replace
+        path: /spec/tls/0/hosts/1
+        value: api.chat.example.com

@@ -1,0 +1,160 @@
+# Matrix Synapse Homeserver 配置
+# 企业安全聊天应用专用配置
+
+server_name: "sec-chat.local"
+pid_file: /data/homeserver.pid
+web_client_location: https://app.element.io/
+
+# 监听配置
+listeners:
+  - port: 8008
+    tls: false
+    type: http
+    x_forwarded: true
+    bind_addresses: ['0.0.0.0']
+    resources:
+      - names: [client, federation]
+        compress: false
+
+# 数据库配置 (PostgreSQL)
+database:
+  name: psycopg2
+  args:
+    user: synapse
+    password: synapse_password
+    database: synapse
+    host: postgres
+    port: 5432
+    cp_min: 5
+    cp_max: 10
+
+# 日志配置
+log_config: "/data/log.yaml"
+
+# 媒体存储
+media_store_path: /data/media_store
+max_upload_size: 100M
+max_image_pixels: 32M
+dynamic_thumbnails: true
+thumbnail_sizes:
+  - width: 32
+    height: 32
+    method: crop
+  - width: 96
+    height: 96
+    method: crop
+  - width: 320
+    height: 240
+    method: scale
+  - width: 640
+    height: 480
+    method: scale
+  - width: 800
+    height: 600
+    method: scale
+
+# URL 预览
+url_preview_enabled: true
+url_preview_ip_range_blacklist:
+  - '127.0.0.0/8'
+  - '10.0.0.0/8'
+  - '172.16.0.0/12'
+  - '192.168.0.0/16'
+
+# 注册配置
+enable_registration: false
+enable_registration_without_verification: false
+
+# 禁用联邦（企业私有化部署）
+federation_domain_whitelist: []
+
+# Redis 缓存配置
+redis:
+  enabled: true
+  host: redis
+  port: 6379
+  password: redis_password
+
+# 消息保留策略
+retention:
+  enabled: true
+  default_policy:
+    min_lifetime: 1d
+    max_lifetime: 365d
+  allowed_lifetime_min: 1h
+  allowed_lifetime_max: 365d
+  purge_jobs:
+    - longest_max_lifetime: 3d
+      interval: 12h
+    - longest_max_lifetime: 7d
+      interval: 1d
+    - longest_max_lifetime: 30d
+      interval: 1d
+    - longest_max_lifetime: 365d
+      interval: 1d
+
+# 房间配置
+encryption_enabled_by_default_for_room_type: all
+
+# 用户目录
+user_directory:
+  enabled: true
+  search_all_users: true
+
+# 速率限制
+rc_message:
+  per_second: 0.5
+  burst_count: 20
+
+rc_registration:
+  per_second: 0.1
+  burst_count: 5
+
+rc_login:
+  address:
+    per_second: 0.1
+    burst_count: 5
+  account:
+    per_second: 0.1
+    burst_count: 5
+  failed_attempts:
+    per_second: 0.1
+    burst_count: 5
+
+# 推送通知
+push:
+  include_content: true
+
+# 签名密钥路径
+signing_key_path: "/data/sec-chat.local.signing.key"
+
+# 可信第三方 ID 服务器（禁用）
+trusted_third_party_id_servers: []
+
+# 报告统计（禁用）
+report_stats: false
+
+# TURN 服务器配置（用于 WebRTC）
+# 需要单独部署 TURN 服务器后配置
+# turn_uris:
+#   - "turn:turn.sec-chat.local:3478?transport=udp"
+#   - "turn:turn.sec-chat.local:3478?transport=tcp"
+# turn_shared_secret: "your-turn-secret"
+# turn_user_lifetime: 86400000
+# turn_allow_guests: false
+
+# 应用服务配置
+# app_service_config_files:
+#   - /data/appservices/bridge.yaml
+
+# 服务器通知
+server_notices:
+  system_mxid_localpart: notices
+  system_mxid_display_name: "Server Notices"
+  room_name: "Server Notices"
+
+# 防止账号枚举
+enable_3pid_lookup: false
+
+# 管理员联系方式
+admin_contact: "mailto:admin@sec-chat.local"

@@ -1,0 +1,11 @@
+# ============================================================
+# Secure Enterprise Chat - Kubernetes Namespace
+# ============================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sec-chat
+  labels:
+    app.kubernetes.io/name: sec-chat
+    app.kubernetes.io/part-of: secure-enterprise-chat
+    environment: production

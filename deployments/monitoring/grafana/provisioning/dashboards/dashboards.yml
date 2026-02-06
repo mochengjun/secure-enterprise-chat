@@ -1,0 +1,16 @@
+# ============================================================
+# Grafana Dashboard Provisioning
+# ============================================================
+apiVersion: 1
+
+providers:
+  - name: 'Secure Enterprise Chat'
+    orgId: 1
+    folder: 'Sec Chat'
+    folderUid: 'sec-chat'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
