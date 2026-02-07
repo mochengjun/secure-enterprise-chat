@@ -27,7 +27,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -o auth-service ./cmd/main.go
 
 # Stage 2: Runtime
-FROM alpine:3.19
+FROM alpine:3.23
 
 # 安装运行时依赖
 RUN apk --no-cache add ca-certificates tzdata curl && \
