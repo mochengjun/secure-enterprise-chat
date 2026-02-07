@@ -30,7 +30,7 @@ dependencies:
   flutter_secure_storage: ^9.0.0
   
   # 生物识别
-  local_auth: ^2.1.8
+  local_auth: ^3.0.0
   
   # 媒体
   video_player: ^2.8.2
