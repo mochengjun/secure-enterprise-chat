@@ -1,0 +1,63 @@
+{
+  "projects": {
+    "web-client": {
+      "version": "0.4.0",
+      "lastBuild": "2026-02-23T14:22:39.250Z"
+    },
+    "flutter-app-android": {
+      "version": "0.1.0",
+      "lastBuild": "2026-02-23T14:22:56.485Z"
+    },
+    "flutter-app-windows": {
+      "version": "0.1.0",
+      "lastBuild": "2026-02-23T14:23:03.797Z"
+    }
+  },
+  "buildHistory": [
+    {
+      "project": "web-client",
+      "success": true,
+      "version": "0.2.0",
+      "framework": "react",
+      "duration": 14471,
+      "installerPath": "dist-packages\\web-client",
+      "timestamp": "2026-02-23T13:55:01.324Z"
+    },
+    {
+      "project": "web-client",
+      "success": true,
+      "version": "0.3.0",
+      "framework": "react",
+      "duration": 12325,
+      "installerPath": "dist-packages\\web-client",
+      "timestamp": "2026-02-23T14:04:15.114Z"
+    },
+    {
+      "project": "web-client",
+      "success": true,
+      "version": "0.4.0",
+      "framework": "react",
+      "duration": 12398,
+      "installerPath": "dist-packages\\web-client",
+      "timestamp": "2026-02-23T14:22:56.484Z"
+    },
+    {
+      "project": "flutter-app-android",
+      "success": true,
+      "version": "0.1.0",
+      "framework": "flutter",
+      "duration": 1057,
+      "installerPath": "dist-packages\\flutter-app-android",
+      "timestamp": "2026-02-23T14:23:03.797Z"
+    },
+    {
+      "project": "flutter-app-windows",
+      "success": true,
+      "version": "0.1.0",
+      "framework": "flutter",
+      "duration": 1052,
+      "installerPath": "dist-packages\\flutter-app-windows",
+      "timestamp": "2026-02-23T14:23:09.653Z"
+    }
+  ]
+}

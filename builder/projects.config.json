@@ -1,0 +1,46 @@
+{
+  "projects": [
+    {
+      "name": "web-client",
+      "path": "c:/Users/MCJ/codebuddy/chat/web-client",
+      "bumpType": "minor",
+      "enabled": true,
+      "framework": "react",
+      "buildOptions": {
+        "skipInstall": false,
+        "forceBuild": false
+      }
+    },
+    {
+      "name": "flutter-app-android",
+      "path": "c:/Users/MCJ/codebuddy/chat/secure-enterprise-chat",
+      "bumpType": "minor",
+      "enabled": true,
+      "framework": "flutter",
+      "buildCommand": "build-android.bat",
+      "buildOptions": {
+        "skipInstall": false,
+        "forceBuild": false
+      }
+    },
+    {
+      "name": "flutter-app-windows",
+      "path": "c:/Users/MCJ/codebuddy/chat/secure-enterprise-chat",
+      "bumpType": "minor",
+      "enabled": true,
+      "framework": "flutter",
+      "buildCommand": "build-windows.bat",
+      "buildOptions": {
+        "skipInstall": false,
+        "forceBuild": false
+      }
+    }
+  ],
+  "global": {
+    "outputDir": "c:/Users/MCJ/codebuddy/chat/builder/dist-packages",
+    "timeout": 600000,
+    "maxConcurrent": 2,
+    "createInstaller": true,
+    "compressOutput": true
+  }
+}

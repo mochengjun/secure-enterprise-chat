@@ -5,8 +5,33 @@ import { apiClient } from '@core/api/client';
 import { ENDPOINTS } from '@core/api/endpoints';
 import { TokenStorage } from '@core/storage/TokenStorage';
 import { WebSocketClient } from '@core/websocket/WebSocketClient';
+import { getDeviceId, updateDeviceActivity } from '@core/storage/DeviceStorage';
 import type { LoginRequest, LoginResponse, RegisterRequest, RegisterResponse, UserResponse } from '@shared/types/api.types';
 import axios from 'axios';
+
+// 刷新Token的函数
+async function refreshAccessToken(): Promise<void> {
+  const refreshToken = TokenStorage.getRefreshToken();
+  if (!refreshToken) {
+    throw new Error('No refresh token available');
+  }
+  
+  try {
+    const response = await apiClient.post<LoginResponse>(
+      ENDPOINTS.AUTH.REFRESH,
+      { refresh_token: refreshToken }
+    );
+    
+    const { access_token, refresh_token } = response.data;
+    TokenStorage.setTokens(access_token, refresh_token);
+    console.log('Token refreshed successfully');
+  } catch (error) {
+    console.error('Failed to refresh token:', error);
+    // 刷新失败时清除 token，强制用户重新登录
+    TokenStorage.clearTokens();
+    throw error;
+  }
+}
 
 // 从后端UserResponse转换为前端User
 function mapUserResponse(data: UserResponse): User {
@@ -58,24 +83,35 @@ export const useAuthStore = create<AuthState>()(
       login: async (credentials: LoginRequest) => {
         set({ isLoading: true, error: null });
         try {
+          // 获取或生成设备ID，支持多设备登录
+          const deviceId = getDeviceId();
+
           // 后端直接返回 {access_token, refresh_token, expires_in, token_type}
           const response = await apiClient.post<LoginResponse>(
             ENDPOINTS.AUTH.LOGIN,
-            credentials
+            {
+              ...credentials,
+              device_id: deviceId, // 添加设备ID
+            }
           );
-          
+
           const { access_token, refresh_token } = response.data;
           TokenStorage.setTokens(access_token, refresh_token);
-          
-          // 设置WebSocket的Token提供者
+
+          // 设置WebSocket的Token提供者和刷新器
           WebSocketClient.setTokenProvider(() => TokenStorage.getAccessToken());
-          
+          WebSocketClient.setTokenRefresher(refreshAccessToken);
+          WebSocketClient.resetReconnectState();
+
           // 登录响应不包含用户信息，需要调用/auth/me获取
           const userResponse = await apiClient.get<UserResponse>(ENDPOINTS.AUTH.ME);
           const user = mapUserResponse(userResponse.data);
-          
+
           WebSocketClient.connect();
-          
+
+          // 更新设备活跃时间
+          updateDeviceActivity();
+
           set({
             user,
             isAuthenticated: true,
@@ -96,25 +132,35 @@ export const useAuthStore = create<AuthState>()(
             ENDPOINTS.AUTH.REGISTER,
             data
           );
-          
+
           // 注册成功后自动登录
+          const deviceId = getDeviceId();
           const loginResponse = await apiClient.post<LoginResponse>(
             ENDPOINTS.AUTH.LOGIN,
-            { username: data.username, password: data.password }
+            {
+              username: data.username,
+              password: data.password,
+              device_id: deviceId, // 添加设备ID
+            }
           );
-          
+
           const { access_token, refresh_token } = loginResponse.data;
           TokenStorage.setTokens(access_token, refresh_token);
-          
-          // 设置WebSocket的Token提供者
+
+          // 设置WebSocket的Token提供者和刷新器
           WebSocketClient.setTokenProvider(() => TokenStorage.getAccessToken());
-          
+          WebSocketClient.setTokenRefresher(refreshAccessToken);
+          WebSocketClient.resetReconnectState();
+
           // 获取用户信息
           const userResponse = await apiClient.get<UserResponse>(ENDPOINTS.AUTH.ME);
           const user = mapUserResponse(userResponse.data);
-          
+
           WebSocketClient.connect();
-          
+
+          // 更新设备活跃时间
+          updateDeviceActivity();
+
           set({
             user,
             isAuthenticated: true,
@@ -134,7 +180,7 @@ export const useAuthStore = create<AuthState>()(
           // 忽略登出API错误
         } finally {
           TokenStorage.clearTokens();
-          WebSocketClient.disconnect();
+          WebSocketClient.disconnectIntentionally();
           set({
             user: null,
             isAuthenticated: false,

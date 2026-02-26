@@ -12,17 +12,46 @@ class WebSocketClientClass {
   private eventHandlers = new Map<string, Set<EventCallback>>();
   private messageQueue: WsMessage[] = [];
   private isConnecting = false;
+  private isIntentionalDisconnect = false;
   private tokenProvider: (() => string | null) | null = null;
+  private tokenRefresher: (() => Promise<void>) | null = null;
 
   // 设置Token提供者
   setTokenProvider(provider: () => string | null): void {
     this.tokenProvider = provider;
   }
+  
+  // 设置Token刷新器
+  setTokenRefresher(refresher: () => Promise<void>): void {
+    this.tokenRefresher = refresher;
+  }
+
+  // 手动断开连接（不会触发重连）
+  disconnectIntentionally(): void {
+    this.isIntentionalDisconnect = true;
+    this.disconnect();
+  }
+
+  // 重置重连状态（用于用户重新登录后）
+  resetReconnectState(): void {
+    this.isIntentionalDisconnect = false;
+    this.reconnectAttempts = 0;
+  }
 
   // 连接WebSocket
-  connect(): void {
-    if (this.ws?.readyState === WebSocket.OPEN || this.isConnecting) {
+  async connect(): Promise<void> {
+    if (this.ws?.readyState === WebSocket.OPEN || this.isConnecting || this.isIntentionalDisconnect) {
       return;
+    }
+
+    // 尝试刷新 token（如果是重连）
+    if (this.tokenRefresher && this.reconnectAttempts > 0) {
+      try {
+        await this.tokenRefresher();
+        console.log('WebSocket: Token refreshed successfully');
+      } catch (e) {
+        console.warn('WebSocket: Token refresh failed, using current token:', e);
+      }
     }
 
     const token = this.tokenProvider?.();
@@ -172,6 +201,10 @@ class WebSocketClientClass {
 
   // 处理重连
   private handleReconnect(): void {
+    if (this.isIntentionalDisconnect) {
+      return;
+    }
+    
     if (this.reconnectTimer) {
       return;
     }
@@ -182,10 +215,17 @@ class WebSocketClientClass {
       return;
     }
 
-    const delay = WS_CONFIG.RECONNECT_DELAY * Math.pow(1.5, this.reconnectAttempts);
+    // 指数退避策略：延迟时间 = baseDelay * 2^attempts
+    const baseDelay = WS_CONFIG.RECONNECT_DELAY;
+    const maxDelay = 60000; // 最大 60 秒
+    const delay = Math.min(
+      baseDelay * Math.pow(2, this.reconnectAttempts),
+      maxDelay
+    );
+    
     this.reconnectAttempts++;
     
-    console.log(`WebSocket: Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
+    console.log(`WebSocket: Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${WS_CONFIG.MAX_RECONNECT_ATTEMPTS})`);
     this.emit(WS_EVENTS.RECONNECTING, { attempt: this.reconnectAttempts });
 
     this.reconnectTimer = setTimeout(() => {
@@ -218,6 +258,7 @@ class WebSocketClientClass {
       this.ws = null;
     }
 
+    this.isConnecting = false;
     this.reconnectAttempts = 0;
     this.messageQueue = [];
   }

@@ -1,0 +1,163 @@
+# ESLint配置 - 自动化代码自查
+# 支持TypeScript, JavaScript, React等
+
+# 环境配置
+env:
+  browser: true
+  es2021: true
+  node: true
+  jest: true
+
+# 解析器配置
+parser: '@typescript-eslint/parser'
+parserOptions:
+  ecmaFeatures:
+    jsx: true
+  ecmaVersion: latest
+  sourceType: module
+
+# 插件
+plugins:
+  - '@typescript-eslint'
+  - 'security'
+  - 'sonarjs'
+
+# 继承规则
+extends:
+  - eslint:recommended
+  - plugin:@typescript-eslint/recommended
+  - plugin:@typescript-eslint/recommended-requiring-type-checking
+  - plugin:security/recommended
+  - plugin:sonarjs/recommended
+  - prettier
+
+# 规则配置
+rules:
+  # ==================== 错误级别规则 ====================
+  no-unused-vars:
+    - error
+    - argsIgnorePattern: '^_'
+      varsIgnorePattern: '^_'
+
+  '@typescript-eslint/no-unused-vars':
+    - error
+    - argsIgnorePattern: '^_'
+      varsIgnorePattern: '^_'
+
+  '@typescript-eslint/explicit-function-return-type':
+    - warn
+    - allowExpressions: true
+      allowTypedFunctionExpressions: true
+
+  '@typescript-eslint/no-explicit-any': warn
+  '@typescript-eslint/no-floating-promises': error
+  '@typescript-eslint/no-misused-promises': error
+
+  # ==================== 安全规则 ====================
+  security/detect-eval-with-expression: error
+  security/detect-non-literal-fs-filename: warn
+  security/detect-non-literal-regexp: warn
+  security/detect-object-injection: warn
+  security/detect-possible-timing-attacks: warn
+
+  # ==================== 代码质量规则 ====================
+  complexity:
+    - error
+    - 10
+
+  max-lines:
+    - warn
+    - max: 300
+      skipBlankLines: true
+      skipComments: true
+
+  max-lines-per-function:
+    - warn
+    - max: 50
+      skipBlankLines: true
+      skipComments: true
+
+  max-depth:
+    - error
+    - max: 4
+
+  max-nested-callbacks:
+    - error
+    - max: 3
+
+  max-statements:
+    - warn
+    - max: 20
+
+  # ==================== 最佳实践规则 ====================
+  no-console:
+    - warn
+    - allow:
+        - warn
+        - error
+        - info
+
+  no-debugger: error
+  no-alert: warn
+  no-var: error
+  prefer-const: error
+  prefer-arrow-callback: warn
+  prefer-template: warn
+
+  # ==================== 代码风格规则 ====================
+  eqeqeq:
+    - error
+    - always
+
+  curly:
+    - error
+    - all
+
+  no-else-return:
+    - error
+    - allowElseIf: false
+
+  # ==================== SonarJS规则 ====================
+  sonarjs/cognitive-complexity:
+    - warn
+    - 15
+
+  sonarjs/no-duplicate-string: warn
+  sonarjs/no-identical-functions: warn
+  sonarjs/no-redundant-boolean: warn
+  sonarjs/no-small-switch: off
+  sonarjs/prefer-immediate-return: warn
+
+  # ==================== 其他规则 ====================
+  no-throw-literal: error
+  prefer-promise-reject-errors: error
+  no-return-await: error
+
+# 忽略文件
+ignorePatterns:
+  - 'node_modules/**'
+  - 'dist/**'
+  - 'build/**'
+  - '*.config.js'
+  - '*.config.ts'
+  - 'coverage/**'
+
+# 覆盖配置
+overrides:
+  # 测试文件特殊规则
+  - files:
+      - '**/*.test.ts'
+      - '**/*.test.tsx'
+      - '**/*.spec.ts'
+      - '**/*.spec.tsx'
+    rules:
+      '@typescript-eslint/no-explicit-any': off
+      '@typescript-eslint/no-non-null-assertion': off
+      max-lines-per-function: off
+
+  # 配置文件特殊规则
+  - files:
+      - '*.config.js'
+      - '*.config.ts'
+    rules:
+      '@typescript-eslint/no-var-requires': off

@@ -5,6 +5,7 @@ import { apiClient } from '@core/api/client';
 import { ENDPOINTS } from '@core/api/endpoints';
 import { WebSocketClient } from '@core/websocket/WebSocketClient';
 import { WS_EVENTS } from '@core/websocket/events';
+import { useAuthStore } from './authStore';
 import type { RoomResponse, RoomsListResponse, MessageResponse, MessagesListResponse, CreateRoomRequest, SendMessageRequest, ReadReceiptsListResponse, PublicRoomResponse, PublicRoomsListResponse } from '@shared/types/api.types';
 
 // 将后端RoomResponse转换为前端Room实体
@@ -23,11 +24,21 @@ function mapRoom(data: RoomResponse): Room {
 }
 
 // 将后端MessageResponse转换为前端Message实体
+// 使用缓存优化，避免重复创建相同的对象
+const messageCache = new Map<string, Message>();
+
 function mapMessage(data: MessageResponse | RoomResponse['last_message']): Message {
   if (!data) {
     throw new Error('Message data is null');
   }
-  return {
+  
+  // 检查缓存
+  const cached = messageCache.get(data.id);
+  if (cached) {
+    return cached;
+  }
+  
+  const message: Message = {
     id: data.id,
     roomId: data.room_id,
     senderId: data.sender_id,
@@ -50,6 +61,15 @@ function mapMessage(data: MessageResponse | RoomResponse['last_message']): Messa
     createdAt: new Date(data.created_at),
     updatedAt: new Date(data.created_at),
   };
+  
+  // 缓存消息（限制缓存大小）
+  if (messageCache.size > 1000) {
+    const firstKey = messageCache.keys().next().value;
+    if (firstKey) messageCache.delete(firstKey);
+  }
+  messageCache.set(data.id, message);
+  
+  return message;
 }
 
 // 消息提示音 - 使用 Web Audio API 生成简单的提示音
@@ -61,21 +81,34 @@ async function initAudioContext() {
   if (audioInitialized) return;
   try {
     audioContext = new AudioContext();
-    // 如果 AudioContext 被挂起，等待用户交互后恢复
     if (audioContext.state === 'suspended') {
       await audioContext.resume();
     }
     audioInitialized = true;
-    console.log('AudioContext initialized successfully');
+    // 减少日志输出
   } catch (e) {
-    console.warn('Failed to initialize AudioContext:', e);
+    // 静默失败
   }
 }
 
-// 在用户首次交互时初始化音频
+// 请求浏览器通知权限
+async function requestNotificationPermission() {
+  if (!('Notification' in window)) {
+    return;
+  }
+  
+  try {
+    await Notification.requestPermission();
+  } catch (e) {
+    // 静默失败
+  }
+}
+
+// 在用户首次交互时初始化音频和请求通知权限
 if (typeof document !== 'undefined') {
   const initOnInteraction = async () => {
     await initAudioContext();
+    await requestNotificationPermission();
     document.removeEventListener('click', initOnInteraction);
     document.removeEventListener('keydown', initOnInteraction);
     document.removeEventListener('touchstart', initOnInteraction);
@@ -110,6 +143,42 @@ async function playNotificationSound() {
     oscillator.stop(audioContext.currentTime + 0.3);
   } catch (e) {
     console.warn('Failed to play notification sound:', e);
+  }
+}
+
+// 显示浏览器桌面通知
+function showDesktopNotification(title: string, body: string, roomId: string) {
+  // 检查浏览器是否支持通知
+  if (!('Notification' in window)) {
+    return;
+  }
+  
+  // 检查权限状态
+  if (Notification.permission !== 'granted') {
+    return;
+  }
+  
+  try {
+    const notification = new Notification(title, {
+      body: body,
+      icon: '/favicon.ico',
+      tag: `message-${roomId}`, // 相同房间的通知会合并
+      requireInteraction: false,
+      silent: false,
+    });
+    
+    // 点击通知时聚焦窗口
+    notification.onclick = () => {
+      window.focus();
+      notification.close();
+    };
+    
+    // 5秒后自动关闭
+    setTimeout(() => {
+      notification.close();
+    }, 5000);
+  } catch (e) {
+    // 静默失败
   }
 }
 
@@ -382,6 +451,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   handleNewMessage: (messageData: MessageResponse) => {
     const message = mapMessage(messageData);
     const { currentRoom } = get();
+    const currentUser = useAuthStore.getState().user;
     
     set((state) => {
       const updatedMessages = new Map(state.messages);
@@ -405,12 +475,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return { messages: updatedMessages, rooms: updatedRooms };
     });
     
-    // 不在当前房间时播放提示音
-    if (currentRoom?.id !== message.roomId) {
-      // 使用 async/await 确保 resume 完成
-      playNotificationSound().catch(e => console.warn('Sound play failed:', e));
-    } else {
+    // 判断是否需要播放通知：
+    // 1. 如果是当前用户自己发送的消息，不播放提示音（发送者已知道）
+    // 2. 如果当前终端正在查看该聊天室，不播放提示音但标记已读
+    // 3. 其他情况播放提示音和显示通知
+    const isOwnMessage = message.senderId === currentUser?.id;
+    const isViewingRoom = currentRoom?.id === message.roomId;
+    
+    if (isOwnMessage) {
+      // 自己发送的消息，不播放提示音
+    } else if (isViewingRoom) {
+      // 正在查看该聊天室，标记已读但不播放提示音
       get().markAsRead(message.roomId);
+    } else {
+      // 不在当前房间且不是自己的消息，播放提示音和显示通知
+      playNotificationSound().catch(e => console.warn('Sound play failed:', e));
+      
+      const senderName = message.sender?.displayName || message.sender?.username || '新消息';
+      showDesktopNotification(senderName, message.content, message.roomId);
     }
   },
 

@@ -2,6 +2,7 @@
 export interface LoginRequest {
   username: string;
   password: string;
+  device_id?: string; // 设备ID，用于支持多设备登录
 }
 
 export interface RegisterRequest {

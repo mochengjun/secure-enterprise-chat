@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo, memo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Layout, Input, Button, Avatar, Typography, Spin, Empty, Tooltip, Upload, message, Dropdown, Modal } from 'antd';
 import type { MenuProps } from 'antd';
@@ -22,192 +22,182 @@ import AuthImage from '@presentation/components/chat/AuthImage';
 import type { Message } from '@domain/entities/Message';
 import dayjs from 'dayjs';
 import { useMediaUpload } from '@presentation/hooks/useMediaUpload';
+import { formatToBeijingDateTime, formatChatMessageTime, getDateSeparatorText } from '@shared/utils/timeUtils';
 
 const { Header, Content, Footer } = Layout;
 const { Text, Paragraph } = Typography;
 
-export function ChatRoomPage() {
-  const { roomId } = useParams<{ roomId: string }>();
-  const navigate = useNavigate();
-  const { user } = useAuthStore();
-  const {
-    currentRoom,
-    messages,
-    isLoadingMessages,
-    hasMoreMessages,
-    typingUsers,
-    fetchMessages,
-    sendMessage,
-    setCurrentRoom,
-    rooms,
-    isMessageRead,
-  } = useChatStore();
+// ==================== 常量样式定义 ====================
+// 提取为常量，避免每次渲染创建新对象
+const STYLES = {
+  messageContainer: {
+    display: 'flex',
+    padding: '4px 16px',
+    gap: 8,
+  },
+  messageBubble: {
+    maxWidth: '70%',
+    display: 'flex',
+    flexDirection: 'column' as const,
+  },
+  messageBubbleOwn: {
+    alignItems: 'flex-end' as const,
+  },
+  messageBubbleOther: {
+    alignItems: 'flex-start' as const,
+  },
+  avatar: {
+    backgroundColor: '#667eea',
+    flexShrink: 0,
+  },
+  dateSeparator: {
+    textAlign: 'center' as const,
+    padding: '16px 0',
+  },
+  dateSeparatorText: {
+    background: '#f0f0f0',
+    padding: '4px 12px',
+    borderRadius: 12,
+    fontSize: 12,
+  },
+  messageText: {
+    margin: 0,
+    whiteSpace: 'pre-wrap' as const,
+    wordBreak: 'break-word' as const,
+    color: 'inherit',
+  },
+  timestamp: {
+    fontSize: 11,
+    marginTop: 2,
+    display: 'flex',
+    alignItems: 'center' as const,
+    gap: 4,
+  },
+  header: {
+    background: '#fff',
+    padding: '0 16px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+    boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+    height: 56,
+  },
+  footer: {
+    background: '#fff',
+    padding: '12px 16px',
+    borderTop: '1px solid #f0f0f0',
+  },
+  inputContainer: {
+    display: 'flex',
+    gap: 8,
+    alignItems: 'flex-end' as const,
+  },
+  typingIndicator: {
+    padding: '4px 16px',
+    background: '#fff',
+    borderTop: '1px solid #f0f0f0',
+  },
+  emptyContainer: {
+    height: '100%',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  messagesContent: {
+    flex: 1,
+    overflow: 'auto',
+    padding: '8px 0',
+    display: 'flex',
+    flexDirection: 'column-reverse' as const,
+  },
+  loadMoreContainer: {
+    textAlign: 'center' as const,
+    padding: 16,
+  },
+  loadingContainer: {
+    textAlign: 'center' as const,
+    padding: 40,
+  },
+  imageCaption: {
+    margin: '4px 0 0 0',
+    fontSize: 12,
+  },
+  fileInfo: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+  },
+};
 
-  const [inputValue, setInputValue] = useState('');
-  const [isSending, setIsSending] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
+// ==================== 消息项组件 ====================
+interface MessageItemProps {
+  msg: Message;
+  prevMsg?: Message;
+  isOwnMessage: boolean;
+  showDateSeparator: boolean;
+  onCopy: (content: string) => void;
+  onImageClick: (url: string) => void;
+  formatFullTime: (date: Date) => string;
+  formatChatTime: (date: Date) => string;
+  formatDateSeparator: (date: Date) => string;
+  isRead?: boolean;
+  userId?: string;
+}
 
-  // 图片上传
-  const { uploadFile } = useMediaUpload();
+const MessageItem = memo(function MessageItem({
+  msg,
+  prevMsg: _prevMsg, // 重命名以避免未使用警告，showDateSeparator 已包含判断结果
+  isOwnMessage,
+  showDateSeparator,
+  onCopy,
+  onImageClick,
+  formatFullTime,
+  formatChatTime,
+  formatDateSeparator,
+  isRead,
+  userId,
+}: MessageItemProps) {
+  // prevMsg 用于计算 showDateSeparator，已在父组件中处理
+  // 右键菜单项
+  const contextMenuItems: MenuProps['items'] = useMemo(() => [
+    {
+      key: 'copy',
+      label: '复制',
+      icon: <CopyOutlined />,
+      onClick: () => onCopy(msg.content),
+    },
+  ], [msg.content, onCopy]);
 
-  // 获取当前房间和消息
-  useEffect(() => {
-    if (roomId) {
-      const room = rooms.find(r => r.id === roomId);
-      if (room) {
-        setCurrentRoom(room);
-      }
-    }
-    return () => {
-      setCurrentRoom(null);
-    };
-  }, [roomId, rooms, setCurrentRoom]);
+  // 消息气泡样式
+  const bubbleStyle = useMemo(() => ({
+    ...STYLES.messageBubble,
+    ...(isOwnMessage ? STYLES.messageBubbleOwn : STYLES.messageBubbleOther),
+  }), [isOwnMessage]);
 
-  // 滚动到底部
-  const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, []);
+  // 内联气泡样式
+  const innerBubbleStyle = useMemo(() => ({
+    background: isOwnMessage ? '#667eea' : '#fff',
+    color: isOwnMessage ? '#fff' : '#1a1a1a',
+    padding: msg.type === 'image' ? '6px' : '10px 14px',
+    borderRadius: isOwnMessage ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+    boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
+    cursor: 'context-menu',
+  }), [isOwnMessage, msg.type]);
 
-  useEffect(() => {
-    if (!isLoadingMessages && isInitialLoad) {
-      scrollToBottom();
-      setIsInitialLoad(false);
-    }
-  }, [isLoadingMessages, isInitialLoad, scrollToBottom]);
-
-  // 获取房间消息
-  const roomMessages = roomId ? (messages.get(roomId) || []) : [];
-  const canLoadMore = roomId ? (hasMoreMessages.get(roomId) ?? true) : false;
-  const roomTypingUsers = roomId ? (typingUsers.get(roomId) || []) : [];
-
-  // 加载更多消息（游标分页）
-  const handleLoadMore = async () => {
-    if (roomId && canLoadMore && !isLoadingMessages && roomMessages.length > 0) {
-      // 获取最后一条（最老的）消息ID作为游标
-      const oldestMessage = roomMessages[roomMessages.length - 1];
-      await fetchMessages(roomId, oldestMessage.id);
-    }
-  };
-
-  // 发送消息
-  const handleSend = async () => {
-    if (!inputValue.trim() || !roomId || isSending) return;
-
-    setIsSending(true);
-    try {
-      await sendMessage(roomId, { content: inputValue.trim(), type: 'text' });
-      setInputValue('');
-      scrollToBottom();
-    } catch {
-      message.error('发送消息失败');
-    } finally {
-      setIsSending(false);
-    }
-  };
-
-  // 处理键盘事件
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
-
-  // 处理粘贴事件（支持粘贴图片）
-  const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-
-    // 查找剪贴板中的图片
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      if (item.type.indexOf('image') !== -1) {
-        e.preventDefault();
-        
-        const file = item.getAsFile();
-        if (!file || !roomId) return;
-
-        try {
-          message.loading({ content: '正在上传图片...', key: 'upload', duration: 0 });
-          const mediaResponse = await uploadFile(file as any);
-          message.destroy('upload');
-          
-          if (!mediaResponse) {
-            message.error('图片上传失败');
-            return;
-          }
-          
-          message.success('图片上传成功');
-          
-          // 自动发送图片消息
-          await sendMessage(roomId, { content: file.name, type: 'image', media_id: mediaResponse.id });
-          scrollToBottom();
-        } catch (error) {
-          message.destroy('upload');
-          message.error('图片上传失败');
-        }
-        
-        break;
-      }
-    }
-  };
-
-  // 格式化消息时间
-  const formatMessageTime = (date: Date) => {
-    return dayjs(date).format('HH:mm');
-  };
-
-  // 检查是否需要显示日期分隔符
-  const shouldShowDateSeparator = (currentMsg: Message, prevMsg?: Message) => {
-    if (!prevMsg) return true;
-    return !dayjs(currentMsg.createdAt).isSame(prevMsg.createdAt, 'day');
-  };
-
-  // 格式化日期分隔符
-  const formatDateSeparator = (date: Date) => {
-    const today = dayjs();
-    const msgDate = dayjs(date);
-    
-    if (msgDate.isSame(today, 'day')) {
-      return '今天';
-    } else if (msgDate.isSame(today.subtract(1, 'day'), 'day')) {
-      return '昨天';
-    } else if (msgDate.isSame(today, 'year')) {
-      return msgDate.format('M月D日');
-    } else {
-      return msgDate.format('YYYY年M月D日');
-    }
-  };
-
-  // 复制消息到剪贴板
-  const handleCopyMessage = (content: string) => {
-    navigator.clipboard.writeText(content).then(() => {
-      message.success('已复制到剪贴板');
-    }).catch(() => {
-      message.error('复制失败');
-    });
-  };
-
-  // 渲染消息内容（支持不同类型）
-  const renderMessageContent = (msg: Message, isOwnMessage: boolean) => {
+  // 渲染消息内容
+  const messageContent = useMemo(() => {
     switch (msg.type) {
       case 'image':
         return (
-          <div 
-            style={{ cursor: 'pointer' }}
-          >
+          <div style={{ cursor: 'pointer' }}>
             <AuthImage
               src={msg.mediaUrl}
               alt={msg.content || '图片'}
-              onClick={() => msg.mediaUrl && setPreviewImage(msg.mediaUrl)}
+              onClick={() => msg.mediaUrl && onImageClick(msg.mediaUrl)}
             />
             {msg.content && (
               <Paragraph style={{
-                margin: '4px 0 0 0',
-                fontSize: 12,
+                ...STYLES.imageCaption,
                 color: isOwnMessage ? 'rgba(255,255,255,0.8)' : '#666',
               }}>
                 {msg.content}
@@ -217,7 +207,7 @@ export function ChatRoomPage() {
         );
       case 'file':
         return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={STYLES.fileInfo}>
             <FileOutlined style={{ fontSize: 24 }} />
             <div>
               <div>{msg.content || '文件'}</div>
@@ -231,138 +221,297 @@ export function ChatRoomPage() {
         );
       case 'video':
         return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={STYLES.fileInfo}>
             <PlayCircleOutlined style={{ fontSize: 24 }} />
             <span>{msg.content || '视频'}</span>
           </div>
         );
       default:
         return (
-          <Paragraph style={{
-            margin: 0,
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-            color: 'inherit',
-          }}>
+          <Paragraph style={STYLES.messageText}>
             {msg.content}
           </Paragraph>
         );
     }
-  };
+  }, [msg, isOwnMessage, onImageClick]);
 
-  // 渲染消息项
-  const renderMessage = (msg: Message, index: number) => {
-    const prevMsg = roomMessages[index + 1]; // 消息是倒序的
-    const isOwnMessage = msg.senderId === user?.id;
-    const showDateSeparator = shouldShowDateSeparator(msg, prevMsg);
-
-    // 右键菜单项
-    const contextMenuItems: MenuProps['items'] = [
-      {
-        key: 'copy',
-        label: '复制',
-        icon: <CopyOutlined />,
-        onClick: () => handleCopyMessage(msg.content),
-      },
-    ];
-
-    return (
-      <div key={msg.id}>
-        {showDateSeparator && (
-          <div style={{
-            textAlign: 'center',
-            padding: '16px 0',
-          }}>
-            <Text type="secondary" style={{
-              background: '#f0f0f0',
-              padding: '4px 12px',
-              borderRadius: 12,
-              fontSize: 12,
-            }}>
-              {formatDateSeparator(msg.createdAt)}
-            </Text>
-          </div>
+  return (
+    <div>
+      {showDateSeparator && (
+        <div style={STYLES.dateSeparator}>
+          <Text type="secondary" style={STYLES.dateSeparatorText}>
+            {formatDateSeparator(msg.createdAt)}
+          </Text>
+        </div>
+      )}
+      
+      <div style={{
+        ...STYLES.messageContainer,
+        justifyContent: isOwnMessage ? 'flex-end' : 'flex-start',
+      }}>
+        {!isOwnMessage && (
+          <Avatar
+            size={36}
+            src={msg.sender.avatarUrl}
+            icon={<UserOutlined />}
+            style={STYLES.avatar}
+          />
         )}
         
-        <div style={{
-          display: 'flex',
-          justifyContent: isOwnMessage ? 'flex-end' : 'flex-start',
-          padding: '4px 16px',
-          gap: 8,
-        }}>
+        <div style={bubbleStyle}>
           {!isOwnMessage && (
-            <Avatar
-              size={36}
-              src={msg.sender.avatarUrl}
-              icon={<UserOutlined />}
-              style={{ backgroundColor: '#667eea', flexShrink: 0 }}
-            />
+            <Text type="secondary" style={{ fontSize: 12, marginBottom: 2 }}>
+              {msg.sender.displayName}
+            </Text>
           )}
           
-          <div style={{
-            maxWidth: '70%',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: isOwnMessage ? 'flex-end' : 'flex-start',
-          }}>
-            {!isOwnMessage && (
-              <Text type="secondary" style={{ fontSize: 12, marginBottom: 2 }}>
-                {msg.sender.displayName}
-              </Text>
-            )}
-            
-            <Dropdown menu={{ items: contextMenuItems }} trigger={['contextMenu']}>
-              <div style={{
-                background: isOwnMessage ? '#667eea' : '#fff',
-                color: isOwnMessage ? '#fff' : '#1a1a1a',
-                padding: msg.type === 'image' ? '6px' : '10px 14px',
-                borderRadius: isOwnMessage ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
-                cursor: 'context-menu',
-              }}>
-                {renderMessageContent(msg, isOwnMessage)}
-              </div>
-            </Dropdown>
-            
-            <Tooltip title={dayjs(msg.createdAt).format('YYYY-MM-DD HH:mm:ss')}>
-              <Text type="secondary" style={{ fontSize: 11, marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
-                {formatMessageTime(msg.createdAt)}
-                {msg.isEdited && ' (已编辑)'}
-                {isOwnMessage && roomId && (
-                  isMessageRead(roomId, msg.senderId, msg.createdAt) ? (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', color: '#667eea' }}>
-                      <CheckOutlined style={{ fontSize: 10 }} />
-                      <CheckOutlined style={{ fontSize: 10, marginLeft: -6 }} />
-                    </span>
-                  ) : (
-                    <CheckOutlined style={{ fontSize: 10, color: '#999' }} />
-                  )
-                )}
-              </Text>
-            </Tooltip>
-          </div>
+          <Dropdown menu={{ items: contextMenuItems }} trigger={['contextMenu']}>
+            <div style={innerBubbleStyle}>
+              {messageContent}
+            </div>
+          </Dropdown>
           
-          {isOwnMessage && (
-            <Avatar
-              size={36}
-              src={user?.avatarUrl}
-              icon={<UserOutlined />}
-              style={{ backgroundColor: '#667eea', flexShrink: 0 }}
-            />
-          )}
+          <Tooltip title={formatFullTime(msg.createdAt)}>
+            <Text type="secondary" style={STYLES.timestamp}>
+              {formatChatTime(msg.createdAt)}
+              {msg.isEdited && ' (已编辑)'}
+              {isOwnMessage && userId && (
+                isRead ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', color: '#667eea' }}>
+                    <CheckOutlined style={{ fontSize: 10 }} />
+                    <CheckOutlined style={{ fontSize: 10, marginLeft: -6 }} />
+                  </span>
+                ) : (
+                  <CheckOutlined style={{ fontSize: 10, color: '#999' }} />
+                )
+              )}
+            </Text>
+          </Tooltip>
         </div>
+        
+        {isOwnMessage && (
+          <Avatar
+            size={36}
+            src={userId}
+            icon={<UserOutlined />}
+            style={STYLES.avatar}
+          />
+        )}
       </div>
-    );
-  };
+    </div>
+  );
+});
+
+// ==================== 主组件 ====================
+export function ChatRoomPage() {
+  const { roomId } = useParams<{ roomId: string }>();
+  const navigate = useNavigate();
+  const user = useAuthStore((state) => state.user);
+  
+  // 使用选择器只订阅需要的状态，减少不必要的重渲染
+  const currentRoom = useChatStore((state) => state.currentRoom);
+  const isLoadingMessages = useChatStore((state) => state.isLoadingMessages);
+  const rooms = useChatStore((state) => state.rooms);
+  const fetchMessages = useChatStore((state) => state.fetchMessages);
+  const sendMessage = useChatStore((state) => state.sendMessage);
+  const setCurrentRoom = useChatStore((state) => state.setCurrentRoom);
+  const isMessageRead = useChatStore((state) => state.isMessageRead);
+  
+  // 使用 useMemo 缓存 Map 查找结果
+  const messagesMap = useChatStore((state) => state.messages);
+  const hasMoreMessagesMap = useChatStore((state) => state.hasMoreMessages);
+  const typingUsersMap = useChatStore((state) => state.typingUsers);
+  
+  const roomMessages = useMemo(() => 
+    roomId ? (messagesMap.get(roomId) || []) : [],
+    [roomId, messagesMap]
+  );
+  
+  const canLoadMore = useMemo(() =>
+    roomId ? (hasMoreMessagesMap.get(roomId) ?? true) : false,
+    [roomId, hasMoreMessagesMap]
+  );
+  
+  const roomTypingUsers = useMemo(() =>
+    roomId ? (typingUsersMap.get(roomId) || []) : [],
+    [roomId, typingUsersMap]
+  );
+
+  const [inputValue, setInputValue] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  // 图片上传
+  const { uploadFile, progress } = useMediaUpload();
+
+  // 获取当前房间
+  useEffect(() => {
+    if (roomId) {
+      const room = rooms.find(r => r.id === roomId);
+      if (room) {
+        setCurrentRoom(room);
+      }
+    }
+    return () => {
+      setCurrentRoom(null);
+    };
+  }, [roomId, rooms, setCurrentRoom]);
+
+  // 滚动到底部 - 使用 instant 而非 smooth 提高性能
+  const scrollToBottom = useCallback(() => {
+    // 使用 instant 模式避免平滑滚动的性能开销
+    messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
+  }, []);
+
+  useEffect(() => {
+    if (!isLoadingMessages && isInitialLoad) {
+      scrollToBottom();
+      setIsInitialLoad(false);
+    }
+  }, [isLoadingMessages, isInitialLoad, scrollToBottom]);
+
+  // 加载更多消息
+  const handleLoadMore = useCallback(async () => {
+    if (roomId && canLoadMore && !isLoadingMessages && roomMessages.length > 0) {
+      const oldestMessage = roomMessages[roomMessages.length - 1];
+      await fetchMessages(roomId, oldestMessage.id);
+    }
+  }, [roomId, canLoadMore, isLoadingMessages, roomMessages, fetchMessages]);
+
+  // 发送消息
+  const handleSend = useCallback(async () => {
+    if (!inputValue.trim() || !roomId || isSending) return;
+
+    setIsSending(true);
+    try {
+      await sendMessage(roomId, { content: inputValue.trim(), type: 'text' });
+      setInputValue('');
+      // 使用 requestAnimationFrame 避免阻塞 UI
+      requestAnimationFrame(() => scrollToBottom());
+    } catch {
+      message.error('发送消息失败');
+    } finally {
+      setIsSending(false);
+    }
+  }, [inputValue, roomId, isSending, sendMessage, scrollToBottom]);
+
+  // 处理键盘事件
+  const handleKeyPress = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  }, [handleSend]);
+
+  // 处理粘贴事件
+  const handlePaste = useCallback(async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.indexOf('image') !== -1) {
+        e.preventDefault();
+        
+        const file = item.getAsFile();
+        if (!file || !roomId) return;
+
+        try {
+          setUploadingImage(true);
+          
+          const uploadResult = await uploadFile(file as any);
+          
+          if (!uploadResult) {
+            message.error('图片上传失败');
+            return;
+          }
+          
+          await sendMessage(roomId, {
+            content: file.name, 
+            type: 'image', 
+            media_id: uploadResult.id,
+          });
+          requestAnimationFrame(() => scrollToBottom());
+        } catch (error: any) {
+          message.error(`图片上传失败: ${error.message}`);
+        } finally {
+          setUploadingImage(false);
+        }
+        
+        break;
+      }
+    }
+  }, [roomId, uploadFile, sendMessage, scrollToBottom]);
+
+  // 格式化函数 - 使用 useCallback 缓存
+  const formatFullTime = useCallback((date: Date) => {
+    return formatToBeijingDateTime(date);
+  }, []);
+
+  const formatChatTime = useCallback((date: Date) => {
+    return formatChatMessageTime(date);
+  }, []);
+
+  const formatDateSeparator = useCallback((date: Date) => {
+    return getDateSeparatorText(date);
+  }, []);
+
+  // 复制消息
+  const handleCopyMessage = useCallback((content: string) => {
+    navigator.clipboard.writeText(content).then(() => {
+      message.success('已复制到剪贴板');
+    }).catch(() => {
+      message.error('复制失败');
+    });
+  }, []);
+
+  // 图片点击
+  const handleImageClick = useCallback((url: string) => {
+    setPreviewImage(url);
+  }, []);
+
+  // 检查日期分隔符 - 使用 useCallback
+  const checkDateSeparator = useCallback((currentMsg: Message, prevMsg?: Message) => {
+    if (!prevMsg) return true;
+    const currentDate = dayjs(currentMsg.createdAt).tz('Asia/Shanghai');
+    const prevDate = dayjs(prevMsg.createdAt).tz('Asia/Shanghai');
+    return !currentDate.isSame(prevDate, 'day');
+  }, []);
+
+  // 预计算消息属性
+  const messageItems = useMemo(() => {
+    return roomMessages.map((msg, index) => {
+      const prevMsg = roomMessages[index + 1];
+      const isOwnMessage = msg.senderId === user?.id;
+      const showDateSeparator = checkDateSeparator(msg, prevMsg);
+      const isRead = roomId ? isMessageRead(roomId, msg.senderId, msg.createdAt) : false;
+      
+      return {
+        msg,
+        prevMsg,
+        isOwnMessage,
+        showDateSeparator,
+        isRead,
+      };
+    });
+  }, [roomMessages, user?.id, checkDateSeparator, roomId, isMessageRead]);
+
+  // 输入状态显示文本
+  const typingText = useMemo(() => {
+    if (roomTypingUsers.length === 0) return null;
+    return `${roomTypingUsers.join(', ')} 正在输入...`;
+  }, [roomTypingUsers]);
+
+  // 关闭预览
+  const closePreview = useCallback(() => setPreviewImage(null), []);
 
   if (!currentRoom) {
     return (
-      <div style={{
-        height: '100%',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-      }}>
+      <div style={STYLES.emptyContainer}>
         <Empty description="请选择一个聊天室" />
       </div>
     );
@@ -371,15 +520,7 @@ export function ChatRoomPage() {
   return (
     <Layout style={{ height: '100%', background: '#f5f5f5' }}>
       {/* 头部 */}
-      <Header style={{
-        background: '#fff',
-        padding: '0 16px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
-        height: 56,
-      }}>
+      <Header style={STYLES.header}>
         <Button
           type="text"
           icon={<ArrowLeftOutlined />}
@@ -389,7 +530,7 @@ export function ChatRoomPage() {
           size={40}
           src={currentRoom.avatarUrl}
           icon={currentRoom.type === 'direct' ? <UserOutlined /> : <TeamOutlined />}
-          style={{ backgroundColor: '#667eea' }}
+          style={STYLES.avatar}
         />
         <div style={{ flex: 1 }}>
           <Text strong style={{ display: 'block' }}>{currentRoom.name}</Text>
@@ -405,22 +546,28 @@ export function ChatRoomPage() {
       </Header>
 
       {/* 消息列表 */}
-      <Content
-        ref={messagesContainerRef}
-        style={{
-          flex: 1,
-          overflow: 'auto',
-          padding: '8px 0',
-          display: 'flex',
-          flexDirection: 'column-reverse',
-        }}
-      >
+      <Content ref={messagesContainerRef} style={STYLES.messagesContent}>
         <div ref={messagesEndRef} />
         
-        {roomMessages.map((msg, index) => renderMessage(msg, index))}
+        {messageItems.map(({ msg, prevMsg, isOwnMessage, showDateSeparator, isRead }) => (
+          <MessageItem
+            key={msg.id}
+            msg={msg}
+            prevMsg={prevMsg}
+            isOwnMessage={isOwnMessage}
+            showDateSeparator={showDateSeparator}
+            onCopy={handleCopyMessage}
+            onImageClick={handleImageClick}
+            formatFullTime={formatFullTime}
+            formatChatTime={formatChatTime}
+            formatDateSeparator={formatDateSeparator}
+            isRead={isRead}
+            userId={user?.avatarUrl}
+          />
+        ))}
         
         {canLoadMore && (
-          <div style={{ textAlign: 'center', padding: 16 }}>
+          <div style={STYLES.loadMoreContainer}>
             <Button
               type="link"
               onClick={handleLoadMore}
@@ -432,32 +579,24 @@ export function ChatRoomPage() {
         )}
         
         {isLoadingMessages && roomMessages.length === 0 && (
-          <div style={{ textAlign: 'center', padding: 40 }}>
+          <div style={STYLES.loadingContainer}>
             <Spin />
           </div>
         )}
       </Content>
 
       {/* 输入状态提示 */}
-      {roomTypingUsers.length > 0 && (
-        <div style={{
-          padding: '4px 16px',
-          background: '#fff',
-          borderTop: '1px solid #f0f0f0',
-        }}>
+      {typingText && (
+        <div style={STYLES.typingIndicator}>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            {roomTypingUsers.join(', ')} 正在输入...
+            {typingText}
           </Text>
         </div>
       )}
 
       {/* 输入框 */}
-      <Footer style={{
-        background: '#fff',
-        padding: '12px 16px',
-        borderTop: '1px solid #f0f0f0',
-      }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+      <Footer style={STYLES.footer}>
+        <div style={STYLES.inputContainer}>
           <Upload showUploadList={false} disabled>
             <Button type="text" icon={<PictureOutlined />} />
           </Upload>
@@ -466,15 +605,35 @@ export function ChatRoomPage() {
           </Upload>
           <Button type="text" icon={<SmileOutlined />} disabled />
           
-          <Input.TextArea
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={handleKeyPress}
-            onPaste={handlePaste}
-            placeholder="输入消息...（支持 Ctrl+V 粘贴图片）"
-            autoSize={{ minRows: 1, maxRows: 4 }}
-            style={{ flex: 1, resize: 'none' }}
-          />
+          <div style={{ position: 'relative', flex: 1 }}>
+            <Input.TextArea
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleKeyPress}
+              onPaste={handlePaste}
+              placeholder="输入消息...（支持 Ctrl+V 粘贴图片）"
+              autoSize={{ minRows: 1, maxRows: 4 }}
+              style={{ width: '100%', resize: 'none' }}
+            />
+            
+            {uploadingImage && (
+              <div style={{ 
+                position: 'absolute', 
+                right: 12, 
+                top: 12, 
+                display: 'flex', 
+                alignItems: 'center',
+                background: 'rgba(0, 0, 0, 0.5)', 
+                padding: '4px 8px', 
+                borderRadius: 12 
+              }}>
+                <Spin size="small" />
+                <span style={{ color: '#fff', fontSize: 12, marginLeft: 6 }}>
+                  上传中 {progress}%
+                </span>
+              </div>
+            )}
+          </div>
           
           <Button
             type="primary"
@@ -492,7 +651,7 @@ export function ChatRoomPage() {
       <Modal
         open={!!previewImage}
         footer={null}
-        onCancel={() => setPreviewImage(null)}
+        onCancel={closePreview}
         width="auto"
         centered
         styles={{ body: { padding: 0, textAlign: 'center' } }}
